@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi Agent · 부동산</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --white:#fff;--bg:#f0f2f8;--border:#dde2ee;
+  --text:#1a1d2e;--muted:#8892a4;
+  --accent:#6c5ce7;--accent-l:#ede9ff;--accent-d:#5a4bd1;
+  --green:#00b894;--red:#e17055;--yellow:#f9a825;--blue:#0984e3;
+  --sh:0 2px 10px rgba(0,0,0,.08);--sh2:0 4px 20px rgba(0,0,0,.12);
+}
+html,body{height:100%;overflow:hidden;}
+body{font-family:-apple-system,'Pretendard',sans-serif;background:var(--bg);color:var(--text);font-size:13px;display:flex;flex-direction:column;}
+
+/* ── HEADER ─────────────────────────────────────────────────────────── */
+.hdr{height:52px;background:var(--white);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:0;flex-shrink:0;z-index:200;box-shadow:0 1px 4px rgba(0,0,0,.05);}
+.logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;color:var(--accent);margin-right:28px;white-space:nowrap;}
+.logo-box{width:30px;height:30px;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:900;}
+.logo-beta{font-size:9px;font-weight:700;background:var(--accent-l);color:var(--accent);padding:2px 6px;border-radius:4px;}
+.nav{display:flex;gap:2px;}
+.nv{padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;}
+.nv:hover{background:var(--bg);color:var(--text);}
+.nv.on{color:var(--accent);background:var(--accent-l);}
+.hdr-r{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.bell{width:32px;height:32px;border:1px solid var(--border);border-radius:8px;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);}
+.bell:hover{border-color:var(--accent);color:var(--accent);}
+.user{display:flex;align-items:center;gap:7px;padding:4px 12px 4px 5px;border:1px solid var(--border);border-radius:20px;cursor:pointer;background:var(--white);}
+.uavt{width:24px;height:24px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;}
+.uname{font-size:12px;font-weight:600;}
+
+/* ── SEARCH BAR ──────────────────────────────────────────────────────── */
+.srchbar{height:54px;background:var(--white);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:8px;flex-shrink:0;z-index:150;}
+.srch{flex:1;max-width:320px;position:relative;}
+.srch input{width:100%;padding:9px 12px 9px 36px;border:1.5px solid var(--border);border-radius:10px;font-size:13px;color:var(--text);outline:none;background:var(--white);}
+.srch input:focus{border-color:var(--accent);}
+.srch svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);}
+.fchip{padding:8px 13px;background:var(--white);border:1.5px solid var(--border);border-radius:10px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:4px;white-space:nowrap;}
+.fchip:hover{border-color:var(--accent);color:var(--accent);}
+.fchip.on{border-color:var(--accent);background:var(--accent-l);color:var(--accent);}
+.fchip svg{width:11px;height:11px;}
+.fbtn{padding:8px 16px;background:var(--accent);border:none;border-radius:10px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;margin-left:4px;}
+/* 필터 드롭다운 */
+.fdrop{position:relative;}
+.fdrop .fchip svg{transition:transform .2s;}
+.fdrop.open .fchip svg{transform:rotate(180deg);}
+.fmenu{position:absolute;top:calc(100% + 6px);left:0;min-width:140px;background:var(--white);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.14);padding:5px;display:none;z-index:500;}
+.fdrop.open .fmenu{display:block;}
+.fopt{padding:8px 11px;border-radius:7px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;white-space:nowrap;}
+.fopt:hover{background:var(--bg);}
+.fopt.on{background:var(--accent-l);color:var(--accent);}
+.fopt.dis{color:var(--muted);}
+.flbl{pointer-events:none;}
+.fbtn:hover{background:var(--accent-d);}
+
+/* ── MAIN ────────────────────────────────────────────────────────────── */
+.main{display:flex;flex:1;overflow:hidden;min-height:0;}
+
+/* ── LEFT (map + cards) ──────────────────────────────────────────────── */
+.left{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden;min-width:0;min-height:0;}
+
+/* MAP WRAPPER */
+.map-wrap{flex:1;position:relative;overflow:hidden;}
+
+/* Leaflet — map-wrap(flex:1) 안을 꽉 채움 → 리사이즈에 자동 대응 */
+#leafletMap{width:100%;height:100%;z-index:1;}
+/* 가격 핀 커스텀 마커 */
+.price-marker{background:var(--accent);color:#fff;font-size:11px;font-weight:800;padding:5px 11px;border-radius:8px;white-space:nowrap;box-shadow:0 3px 12px rgba(108,92,231,.45);border:1.5px solid rgba(255,255,255,.3);cursor:pointer;transition:.15s;}
+.price-marker:hover{background:var(--accent-d);transform:scale(1.06);}
+.price-marker.sel{background:#2d3436;}
+.price-marker-wrap{display:flex;flex-direction:column;align-items:center;}
+.price-marker-tail{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid var(--accent);}
+.price-marker-tail.sel{border-top-color:#2d3436;}
+/* Leaflet 기본 UI 위치 조정 */
+.leaflet-top.leaflet-right{top:140px;}
+.leaflet-control-zoom{display:none;}  /* 커스텀 줌 버튼 사용 */
+
+/* LEFT TOOLBAR */
+.ltool{position:absolute;left:12px;top:12px;z-index:50;display:flex;flex-direction:column;gap:5px;}
+.ltbtn{width:50px;background:var(--white);border:1.5px solid var(--border);border-radius:12px;padding:8px 4px 6px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;box-shadow:var(--sh);transition:.15s;}
+.ltbtn:hover,.ltbtn.on{border-color:var(--accent);background:var(--accent-l);}
+.ltbtn.on .ltic{color:var(--accent);}
+.ltico{font-size:18px;line-height:1;}
+.ltic{font-size:9px;font-weight:700;color:var(--muted);text-align:center;line-height:1.3;}
+.ltbtn.on .ltic{color:var(--accent);}
+
+/* MAP OVERLAY RIGHT */
+.oright{position:absolute;top:12px;right:12px;z-index:50;display:flex;flex-direction:column;gap:6px;}
+.otog{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:8px 12px;box-shadow:var(--sh);display:flex;align-items:center;gap:10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;}
+.tog{width:36px;height:20px;background:var(--accent);border-radius:10px;position:relative;cursor:pointer;flex-shrink:0;}
+.togk{width:16px;height:16px;background:#fff;border-radius:50%;position:absolute;top:2px;left:18px;box-shadow:0 1px 3px rgba(0,0,0,.25);}
+.tog.off{background:#cbd5e1;}
+.tog.off .togk{left:2px;}
+
+/* MAP TYPE */
+.mtype{position:absolute;left:70px;bottom:12px;z-index:50;display:flex;background:var(--white);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:var(--sh);}
+.mtbtn{padding:6px 13px;font-size:11px;font-weight:700;cursor:pointer;border:none;background:none;color:var(--muted);}
+.mtbtn.on{background:var(--accent);color:#fff;}
+
+/* ZOOM */
+.zoom{position:absolute;right:12px;bottom:12px;z-index:50;background:var(--white);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:var(--sh);}
+.zbtn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;color:var(--muted);border:none;background:none;font-weight:300;}
+.zbtn:hover{background:var(--bg);}
+.zbtn:first-child{border-bottom:1px solid var(--border);}
+.lbtn{position:absolute;right:56px;bottom:12px;z-index:50;width:36px;height:36px;background:var(--white);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--sh);color:var(--muted);}
+.lbtn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* PRICE PINS */
+.ppin{position:absolute;transform:translate(-50%,-100%);cursor:pointer;z-index:30;}
+.pbox{background:var(--accent);color:#fff;font-size:11px;font-weight:800;padding:5px 11px;border-radius:8px;white-space:nowrap;box-shadow:0 3px 12px rgba(108,92,231,.45);transition:.2s;border:1.5px solid rgba(255,255,255,.3);}
+.pbox:hover{background:var(--accent-d);transform:scale(1.06);}
+.pbox.sel{background:#2d3436;}
+.ptail{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid var(--accent);margin:0 auto;transition:.2s;}
+.ptail.sel{border-top-color:#2d3436;}
+.pcnt{position:absolute;transform:translate(-50%,-50%);background:#636e72;color:#fff;font-size:9px;font-weight:800;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--sh);z-index:30;}
+
+/* 지도 출처 표시 */
+.map-credit{position:absolute;bottom:4px;right:8px;z-index:60;font-size:9px;color:#888;pointer-events:none;}
+
+/* CARDS */
+.cards{flex-shrink:0;background:var(--white);border-top:1px solid var(--border);padding:12px 16px;height:190px;}
+.chdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.ctitle{font-size:13px;font-weight:800;display:flex;align-items:center;gap:6px;}
+.cbadge{background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;}
+.cmore{font-size:12px;color:var(--accent);font-weight:600;cursor:pointer;display:flex;align-items:center;gap:3px;}
+.cscroll{display:flex;gap:10px;overflow-x:auto;height:128px;}
+.cscroll::-webkit-scrollbar{height:3px;}
+.cscroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+/* PROP CARD */
+.pcard{min-width:190px;max-width:190px;background:var(--white);border:1.5px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;transition:.2s;flex-shrink:0;display:flex;flex-direction:column;}
+.pcard:hover{border-color:var(--accent);box-shadow:0 4px 16px rgba(108,92,231,.15);}
+.pcard.sel{border-color:var(--accent);box-shadow:0 4px 16px rgba(108,92,231,.25);}
+.pimg{height:72px;position:relative;display:flex;align-items:center;justify-content:center;font-size:28px;}
+.rbadge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.55);color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:5px;}
+.hbtn{position:absolute;top:6px;right:6px;width:22px;height:22px;background:rgba(255,255,255,.9);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;border:none;}
+.pbody{padding:8px 10px;flex:1;}
+.pprice{font-size:14px;font-weight:900;color:var(--accent);}
+.pname{font-size:11px;font-weight:700;margin:1px 0;}
+.paddr{font-size:10px;color:var(--muted);margin-bottom:5px;}
+.pmeta{display:flex;gap:5px;font-size:9px;color:var(--muted);margin-bottom:5px;}
+.ptags{display:flex;gap:3px;flex-wrap:wrap;}
+.ptag{padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;}
+.ts{background:#dff5f0;color:#00b894;}
+.tk{background:#fff0e8;color:#e17055;}
+.tn{background:#e8e4ff;color:#6c5ce7;}
+.ti{background:#fff8e1;color:#f9a825;}
+
+/* ── RIGHT PANEL ─────────────────────────────────────────────────────── */
+.rp{width:355px;min-width:300px;max-width:720px;background:var(--white);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
+.rphdr{padding:13px 16px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.rphdr-row{display:flex;align-items:center;justify-content:space-between;}
+.rpinfo{display:flex;align-items:center;gap:10px;}
+.rpico{width:34px;height:34px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:900;}
+.rpname{font-size:14px;font-weight:800;}
+.rpst{font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px;margin-top:1px;}
+.rpst::before{content:'';width:6px;height:6px;background:var(--green);border-radius:50%;display:inline-block;}
+.rptops{display:flex;gap:5px;}
+.rpib{width:28px;height:28px;border:1px solid var(--border);border-radius:7px;background:none;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;}
+.rpib:hover{border-color:var(--accent);color:var(--accent);}
+
+/* chat */
+.chat{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-height:0;}
+.chat::-webkit-scrollbar{width:3px;}
+.chat::-webkit-scrollbar-thumb{background:var(--border);}
+.mu{align-self:flex-end;max-width:82%;}
+.mu .bl{background:var(--accent);color:#fff;padding:9px 13px;border-radius:14px 14px 4px 14px;font-size:12px;line-height:1.5;}
+.mt{font-size:10px;color:var(--muted);margin-top:3px;text-align:right;}
+.ma{align-self:flex-start;max-width:94%;}
+.marow{display:flex;align-items:flex-start;gap:8px;}
+.maic{width:26px;height:26px;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:900;flex-shrink:0;}
+.ma .bl{background:#f4f6fb;border:1px solid var(--border);padding:10px 13px;border-radius:4px 14px 14px 14px;font-size:12px;line-height:1.6;}
+.reasons{margin-top:9px;display:flex;flex-direction:column;gap:5px;}
+.rrow{display:flex;align-items:center;gap:8px;padding:6px 9px;background:var(--white);border:1px solid var(--border);border-radius:8px;}
+.rico{width:24px;height:24px;border-radius:6px;background:var(--accent-l);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
+.rlbl{font-size:10px;font-weight:800;color:var(--accent);min-width:36px;}
+.rtxt{font-size:11px;color:var(--muted);}
+.vmore{margin-top:9px;width:100%;padding:8px;background:var(--accent-l);border:1.5px solid var(--accent);border-radius:9px;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;}
+.vmore:hover{background:var(--accent);color:#fff;}
+
+/* chat input */
+.cinp{padding:10px 14px 8px;border-top:1px solid var(--border);flex-shrink:0;}
+.cinprow{display:flex;gap:7px;margin-bottom:8px;}
+.cinprow input{flex:1;padding:9px 13px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;font-size:12px;color:var(--text);outline:none;}
+.cinprow input:focus{border-color:var(--accent);}
+.csend{width:34px;height:34px;background:var(--accent);border:none;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.csend:hover{background:var(--accent-d);}
+.csend svg{width:13px;height:13px;color:#fff;}
+.qchips{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;}
+.qchips::-webkit-scrollbar{height:0;}
+.qc{padding:5px 10px;background:var(--white);border:1.5px solid var(--border);border-radius:20px;font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;flex-shrink:0;}
+.qc:hover{border-color:var(--accent);color:var(--accent);}
+
+/* analysis summary */
+.asec{padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0;}
+.asec-t{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px;}
+.sgrid{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.si{background:var(--bg);border-radius:10px;padding:10px 12px;}
+.si-l{font-size:10px;color:var(--muted);margin-bottom:3px;}
+.si-trend{font-size:13px;font-weight:800;color:var(--green);}
+.si-sub{font-size:10px;color:var(--muted);margin-top:1px;}
+.si-big{font-size:20px;font-weight:900;}
+.si-dn{font-size:10px;color:var(--muted);}
+.sbar{height:4px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden;}
+.sfill{height:100%;border-radius:2px;}
+
+/* dev plans */
+.dpsec{padding:10px 16px 14px;flex-shrink:0;}
+.dpt{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;}
+.dpt a{font-size:11px;color:var(--accent);font-weight:600;cursor:pointer;text-transform:none;letter-spacing:0;}
+.dpi{display:flex;align-items:flex-start;gap:9px;padding:8px 10px;background:var(--bg);border-radius:10px;margin-bottom:6px;}
+.dpico{width:30px;height:30px;background:var(--accent-l);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+.dpn{font-size:12px;font-weight:700;}
+.dpd{font-size:10px;color:var(--muted);margin-top:2px;line-height:1.4;}
+
+/* ── RESIZE SPLITTERS ─────────────────────────────────────────────────── */
+.vsplit{width:7px;flex-shrink:0;cursor:col-resize;position:relative;z-index:120;background:transparent;}
+.vsplit::after{content:'';position:absolute;left:2px;top:0;bottom:0;width:3px;border-radius:2px;background:var(--border);transition:.15s;}
+.vsplit:hover::after,.vsplit.drag::after{background:var(--accent);}
+.hsplit{height:7px;flex-shrink:0;cursor:row-resize;position:relative;z-index:120;background:transparent;}
+.hsplit::after{content:'';position:absolute;top:2px;left:0;right:0;height:3px;border-radius:2px;background:var(--border);transition:.15s;}
+.hsplit:hover::after,.hsplit.drag::after{background:var(--accent);}
+body.resizing,body.resizing *{cursor:col-resize!important;user-select:none!important;}
+body.resizing-v,body.resizing-v *{cursor:row-resize!important;user-select:none!important;}
+
+/* ── FAVORITE ─────────────────────────────────────────────────────────── */
+.hbtn.fav{background:var(--accent);color:#fff;}
+.nvbadge{display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;background:var(--accent);color:#fff;font-size:9px;font-weight:800;border-radius:8px;padding:0 4px;margin-left:4px;}
+
+/* ── MAP LAYER POI MARKERS ────────────────────────────────────────────── */
+.poi{display:flex;flex-direction:column;align-items:center;cursor:pointer;}
+.poi-dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25);border:2px solid var(--accent);}
+.poi-lbl{margin-top:2px;font-size:9px;font-weight:800;color:#1a1d2e;background:rgba(255,255,255,.92);padding:1px 5px;border-radius:5px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.15);}
+.me-dot{width:18px;height:18px;border-radius:50%;background:var(--blue);border:3px solid #fff;box-shadow:0 0 0 5px rgba(9,132,227,.3),0 2px 6px rgba(0,0,0,.3);}
+
+/* ── EMPTY STATE / TOAST ──────────────────────────────────────────────── */
+.empty-cards{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;text-align:center;color:var(--muted);gap:6px;font-size:12px;line-height:1.5;padding:18px;}
+.empty-cards .ei{font-size:30px;}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(18px);background:#2d3436;color:#fff;font-size:12px;font-weight:600;padding:10px 18px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.28);z-index:9999;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ── CHAT ↔ 분석 영역 리사이즈 ─────────────────────────────────────────── */
+.chat{min-height:120px;}
+.rpsplit{height:12px;flex-shrink:0;cursor:row-resize;position:relative;display:flex;align-items:center;justify-content:center;background:var(--bg);border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+.rpsplit:hover{background:var(--accent-l);}
+.rpgrip{width:34px;height:3px;border-radius:2px;background:var(--border);}
+.rpsplit:hover .rpgrip,.rpsplit.drag .rpgrip{background:var(--accent);}
+.rpcollapse{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:22px;height:18px;border:none;background:none;color:var(--muted);font-size:11px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;border-radius:5px;}
+.rpcollapse:hover{color:var(--accent);background:var(--white);}
+.rpbottom{flex-shrink:0;overflow-y:auto;}
+.rpbottom::-webkit-scrollbar{width:3px;}
+.rpbottom::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+/* ── AI 분석 탭 전체 리포트 뷰 ─────────────────────────────────────────── */
+.aview{position:absolute;inset:0;z-index:130;background:var(--bg);overflow-y:auto;display:none;}
+.aview.on{display:block;}
+.aview::-webkit-scrollbar{width:7px;}
+.aview::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+.aview-inner{padding:20px 22px 32px;max-width:780px;margin:0 auto;}
+.aview-h{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
+.aview-title{font-size:19px;font-weight:900;}
+.aview-title span{color:var(--muted);font-weight:700;font-size:14px;}
+.aview-sub{font-size:12px;color:var(--muted);margin-top:5px;}
+.aview-sub b{color:var(--accent);}
+.aview-sec-t{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;margin:20px 0 10px;}
+.aview .sgrid{grid-template-columns:repeat(auto-fit,minmax(165px,1fr));}
+.aview .si{padding:13px 15px;}
+.aview .si-big{font-size:24px;}
+.dist{background:var(--white);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.dist-row{display:flex;align-items:center;gap:11px;margin-bottom:10px;}
+.dist-row:last-child{margin-bottom:0;}
+.dist-lbl{width:74px;font-size:11px;font-weight:700;flex-shrink:0;}
+.dist-bar{flex:1;height:18px;background:var(--bg);border-radius:6px;overflow:hidden;}
+.dist-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-d));border-radius:6px;transition:width .4s;}
+.dist-n{width:36px;text-align:right;font-size:11px;font-weight:800;color:var(--accent);flex-shrink:0;}
+.atop{display:flex;flex-direction:column;gap:8px;}
+.atop-i{display:flex;align-items:center;gap:12px;background:var(--white);border:1px solid var(--border);border-radius:12px;padding:11px 14px;cursor:pointer;transition:.15s;}
+.atop-i:hover{border-color:var(--accent);box-shadow:0 3px 14px rgba(108,92,231,.14);transform:translateY(-1px);}
+.atop-rank{width:27px;height:27px;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.atop-main{flex:1;min-width:0;}
+.atop-name{font-size:13px;font-weight:800;}
+.atop-meta{font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.atop-price{font-size:16px;font-weight:900;color:var(--accent);flex-shrink:0;}
+.tagrow{display:flex;flex-wrap:wrap;gap:8px;}
+.tagcnt{background:var(--white);border:1px solid var(--border);border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;}
+.tagcnt b{color:var(--accent);font-size:13px;}
+.dplist{display:flex;flex-direction:column;gap:8px;}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="logo">
+    <div class="logo-box">Pi</div>Pi Agent<span class="logo-beta">Beta</span>
+  </div>
+  <nav class="nav">
+    <div class="nv" data-view="home" onclick="setNav(this)">홈</div>
+    <div class="nv on" data-view="map" onclick="setNav(this)">지도</div>
+    <div class="nv" data-view="ai" onclick="setNav(this)">AI 분석</div>
+    <div class="nv" data-view="fav" onclick="setNav(this)">관심 매물 <span class="nvbadge" id="navFavCnt">0</span></div>
+    <div class="nv" data-view="insight" onclick="setNav(this)">시장 인사이트</div>
+  </nav>
+  <div class="hdr-r">
+    <button class="bell">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" width="14" height="14"><path d="M8 2a4 4 0 014 4v3l1 2H3l1-2V6a4 4 0 014-4zm-1 9h2" stroke-linecap="round"/></svg>
+    </button>
+    <div class="user">
+      <div class="uavt">김</div>
+      <div class="uname">김피아이</div>
+      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" width="10" height="10"><path d="M2 4l4 4 4-4" stroke-linecap="round"/></svg>
+    </div>
+  </div>
+</div>
+
+<!-- SEARCH BAR -->
+<div class="srchbar">
+  <div class="srch">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" width="13" height="13"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5" stroke-linecap="round"/></svg>
+    <input type="text" id="mainSearch" placeholder="지역, 아파트명, 학교, 지하철역 검색" onkeydown="if(event.key==='Enter'&&this.value.trim())searchByName(this.value.trim())"/>
+  </div>
+  <div id="apiBadge" style="padding:6px 11px;border-radius:8px;font-size:11px;font-weight:700;background:rgba(100,116,139,.1);color:var(--muted);white-space:nowrap;flex-shrink:0;">⏳ 서버 확인 중...</div>
+  <!-- 거래유형 -->
+  <div class="fdrop" id="fd-deal">
+    <div class="fchip on" onclick="toggleDrop('deal')"><span class="flbl">매매</span> <svg viewBox="0 0 12 12" fill="none" stroke="currentColor"><path d="M2 4l4 4 4-4" stroke-linecap="round"/></svg></div>
+    <div class="fmenu">
+      <div class="fopt" onclick="setFilter('deal','all','거래 전체')">전체</div>
+      <div class="fopt on" onclick="setFilter('deal','sale','매매')">매매</div>
+      <div class="fopt dis" onclick="setFilter('deal','jeonse','전세')">전세</div>
+      <div class="fopt dis" onclick="setFilter('deal','wolse','월세')">월세</div>
+    </div>
+  </div>
+  <!-- 가격 -->
+  <div class="fdrop" id="fd-price">
+    <div class="fchip" onclick="toggleDrop('price')"><span class="flbl">가격 전체</span> <svg viewBox="0 0 12 12" fill="none" stroke="currentColor"><path d="M2 4l4 4 4-4" stroke-linecap="round"/></svg></div>
+    <div class="fmenu">
+      <div class="fopt on" onclick="setFilter('price','all','가격 전체')">전체</div>
+      <div class="fopt" onclick="setFilter('price','u10','10억 이하')">10억 이하</div>
+      <div class="fopt" onclick="setFilter('price','10_20','10~20억')">10~20억</div>
+      <div class="fopt" onclick="setFilter('price','20_30','20~30억')">20~30억</div>
+      <div class="fopt" onclick="setFilter('price','o30','30억 이상')">30억 이상</div>
+    </div>
+  </div>
+  <!-- 유형 -->
+  <div class="fdrop" id="fd-type">
+    <div class="fchip on" onclick="toggleDrop('type')"><span class="flbl">아파트</span> <svg viewBox="0 0 12 12" fill="none" stroke="currentColor"><path d="M2 4l4 4 4-4" stroke-linecap="round"/></svg></div>
+    <div class="fmenu">
+      <div class="fopt" onclick="setFilter('type','all','유형 전체')">전체</div>
+      <div class="fopt on" onclick="setFilter('type','apt','아파트')">아파트</div>
+      <div class="fopt dis" onclick="setFilter('type','officetel','오피스텔')">오피스텔</div>
+      <div class="fopt dis" onclick="setFilter('type','villa','빌라')">빌라</div>
+    </div>
+  </div>
+  <!-- 면적 -->
+  <div class="fdrop" id="fd-area">
+    <div class="fchip" onclick="toggleDrop('area')"><span class="flbl">면적 전체</span> <svg viewBox="0 0 12 12" fill="none" stroke="currentColor"><path d="M2 4l4 4 4-4" stroke-linecap="round"/></svg></div>
+    <div class="fmenu">
+      <div class="fopt on" onclick="setFilter('area','all','면적 전체')">전체</div>
+      <div class="fopt" onclick="setFilter('area','u60','60㎡ 이하')">60㎡ 이하</div>
+      <div class="fopt" onclick="setFilter('area','60_85','60~85㎡')">60~85㎡</div>
+      <div class="fopt" onclick="setFilter('area','85_135','85~135㎡')">85~135㎡</div>
+      <div class="fopt" onclick="setFilter('area','o135','135㎡ 이상')">135㎡ 이상</div>
+    </div>
+  </div>
+  <div class="fbtn" onclick="resetFilters()">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" width="12" height="12"><path d="M2 7a5 5 0 1 1 1.5 3.5M2 7V4M2 7h3" stroke-linecap="round" stroke-linejoin="round"/></svg>초기화
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT: map + cards -->
+  <div class="left">
+
+    <!-- MAP WRAPPER -->
+    <div class="map-wrap">
+
+      <!-- Leaflet 지도 -->
+      <div id="leafletMap"></div>
+      <div class="map-credit">© OpenStreetMap contributors</div>
+
+      <!-- LEFT TOOLBAR -->
+      <div class="ltool">
+        <div class="ltbtn" onclick="locateMe()"><div class="ltico">📍</div><div class="ltic">현재<br>위치</div></div>
+        <div class="ltbtn" data-layer="subway" onclick="toggleLayer('subway',this)"><div class="ltico">🚇</div><div class="ltic">지하철</div></div>
+        <div class="ltbtn" data-layer="school" onclick="toggleLayer('school',this)"><div class="ltico">🏫</div><div class="ltic">학군</div></div>
+        <div class="ltbtn" data-layer="store" onclick="toggleLayer('store',this)"><div class="ltico">🏪</div><div class="ltic">편의<br>시설</div></div>
+        <div class="ltbtn" data-layer="dev" onclick="toggleLayer('dev',this)"><div class="ltico">🏗️</div><div class="ltic">개발<br>계획</div></div>
+        <div class="ltbtn" data-layer="deal" onclick="toggleLayer('deal',this)"><div class="ltico">💰</div><div class="ltic">실거<br>래가</div></div>
+      </div>
+
+      <!-- OVERLAY RIGHT -->
+      <div class="oright">
+        <div class="otog"><span>실거래가</span><div class="tog off" id="togDeal" onclick="toggleDeals(this)"><div class="togk"></div></div></div>
+        <div class="otog"><span>매물 표시</span><div class="tog" id="togPins" onclick="togglePins(this)"><div class="togk"></div></div></div>
+      </div>
+
+      <!-- ZOOM -->
+      <div class="zoom"><button class="zbtn" onclick="zm(1)">+</button><button class="zbtn" onclick="zm(-1)">−</button></div>
+      <div class="lbtn">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" width="14" height="14"><circle cx="8" cy="8" r="3"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3" stroke-linecap="round"/></svg>
+      </div>
+
+      <!-- MAP TYPE -->
+      <div class="mtype">
+        <button class="mtbtn on" onclick="setMT(this)">지도</button>
+        <button class="mtbtn" onclick="setMT(this)">위성</button>
+      </div>
+
+    </div>
+
+    <!-- 지도 ↔ 카드 리사이즈 핸들 -->
+    <div class="hsplit" id="hsplit"></div>
+
+    <!-- CARDS -->
+    <div class="cards">
+      <div class="chdr">
+        <div class="ctitle">추천 매물 <span class="cbadge" id="ccnt">4</span></div>
+        <div class="cmore">더보기 <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" width="10" height="10"><path d="M4 2l4 4-4 4" stroke-linecap="round"/></svg></div>
+      </div>
+      <div class="cscroll" id="cards"></div>
+    </div>
+
+    <!-- AI 분석 탭 — 좌측 전체 리포트 뷰 (기본 숨김) -->
+    <div id="analysisView" class="aview"></div>
+  </div>
+
+  <!-- 좌측 ↔ 채팅 패널 리사이즈 핸들 -->
+  <div class="vsplit" id="vsplit"></div>
+
+  <!-- RIGHT PANEL -->
+  <div class="rp">
+    <div class="rphdr">
+      <div class="rphdr-row">
+        <div class="rpinfo">
+          <div class="rpico">Pi</div>
+          <div><div class="rpname">AI Agent</div><div class="rpst">Online</div></div>
+        </div>
+        <div class="rptops">
+          <button class="rpib">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" width="12" height="12"><path d="M1 7a6 6 0 1012 0A6 6 0 001 7zm6-2v3l2 1" stroke-linecap="round"/></svg>
+          </button>
+          <button class="rpib">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" width="12" height="12"><circle cx="2.5" cy="7" r="1.2" fill="currentColor"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/><circle cx="11.5" cy="7" r="1.2" fill="currentColor"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat" id="chat">
+      <div class="mu">
+        <div class="bl">강남구에서 10억 이하 아파트 추천해줘</div>
+        <div class="mt">오전 10:30</div>
+      </div>
+      <div class="ma">
+        <div class="marow">
+          <div class="maic">Pi</div>
+          <div>
+            <div class="bl">
+              강남구에서 10억 이하 아파트를 추천해드릴게요.<br>위치, 교통, 학군, 미래가치 등을 종합적으로 분석했습니다.
+              <div class="reasons">
+                <div class="rrow"><div class="rico">🚇</div><div class="rlbl">교통</div><div class="rtxt">2호선, 3호선 등 주요 노선 접근성 우수</div></div>
+                <div class="rrow"><div class="rico">🏫</div><div class="rlbl">학군</div><div class="rtxt">대치동 학군, 명문학교 배정 가능성</div></div>
+              </div>
+              <button class="vmore" onclick="document.getElementById('cards').scrollIntoView({behavior:'smooth'})">
+                추천 매물 4개 보기
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" width="11" height="11"><path d="M4 2l4 4-4 4" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="mt">오전 10:30</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cinp">
+      <div class="cinprow">
+        <input type="text" id="ci" placeholder="무엇이든 물어보세요..." onkeydown="if(event.key==='Enter')send()"/>
+        <button class="csend" onclick="send()">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor"><path d="M1 7l11-5-4 5 4 5z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="qchips">
+        <div class="qc" onclick="sendQ(this)">재개발 예정지 알려줘</div>
+        <div class="qc" onclick="sendQ(this)">역세권 단지 찾아줘</div>
+        <div class="qc" onclick="sendQ(this)">전세가율 높은 곳</div>
+        <div class="qc" onclick="sendQ(this)">학군 우수 단지</div>
+        <div class="qc" onclick="sendQ(this)">신축만 보여줘</div>
+      </div>
+    </div>
+
+    <!-- 채팅 ↔ 분석영역 리사이즈 핸들 (드래그로 채팅 크기 조절 / 버튼으로 접기) -->
+    <div class="rpsplit" id="rpsplit" title="드래그하여 채팅 영역 크기 조절">
+      <span class="rpgrip"></span>
+      <button class="rpcollapse" id="rpcollapse" onclick="toggleBottom(event)" title="분석 영역 접기/펼치기">▾</button>
+    </div>
+
+    <div class="rpbottom" id="rpbottom">
+    <div class="asec">
+      <div class="asec-t">AI 분석 요약</div>
+      <div class="sgrid">
+        <div class="si">
+          <div class="si-l">실거래가 추이</div>
+          <div class="si-trend">상승 ↗</div>
+          <div class="si-sub">최근 6개월 +6.7%</div>
+          <div class="sbar"><div class="sfill" style="width:67%;background:var(--green)"></div></div>
+        </div>
+        <div class="si">
+          <div class="si-l">학군 점수</div>
+          <div style="display:flex;align-items:baseline;gap:3px"><div class="si-big">91</div><div class="si-dn">/100</div></div>
+          <div class="si-sub">강남구 상위 5%</div>
+          <div class="sbar"><div class="sfill" style="width:91%;background:var(--accent)"></div></div>
+        </div>
+        <div class="si">
+          <div class="si-l">교통 점수</div>
+          <div style="display:flex;align-items:baseline;gap:3px"><div class="si-big">88</div><div class="si-dn">/100</div></div>
+          <div class="si-sub">역세권, 2호선 접근 우수</div>
+          <div class="sbar"><div class="sfill" style="width:88%;background:var(--blue)"></div></div>
+        </div>
+        <div class="si">
+          <div class="si-l">투자 점수</div>
+          <div style="display:flex;align-items:baseline;gap:3px"><div class="si-big">87</div><div class="si-dn">/100</div></div>
+          <div class="si-sub">높은 미래가치</div>
+          <div class="sbar"><div class="sfill" style="width:87%;background:var(--yellow)"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dpsec">
+      <div class="dpt">주요 개발 계획<a>더보기 ›</a></div>
+      <div class="dpi">
+        <div class="dpico">🏙️</div>
+        <div><div class="dpn">영동대로 지하공간 복합개발</div><div class="dpd">2026년 완료 예정 · 교통 및 상권 활성화 기대</div></div>
+      </div>
+      <div class="dpi">
+        <div class="dpico">🚉</div>
+        <div><div class="dpn">수서역세권 개발</div><div class="dpd">2028년 완료 예정 · 주거·업무·상업 복합단지</div></div>
+      </div>
+    </div>
+    </div><!-- /rpbottom -->
+  </div>
+</div>
+
+<script>
+// ── DATA (목업 — 키/서버 없이도 완전 동작) ────────────────────────────────────────
+// price 단위 = 만원 (98000 = 9.8억)
+const MOCK_PROPS = [
+  {id:0, name:'래미안 도곡 카운티', dong:'도곡동', price:98000,  area:84, year:2007, floor:'15/25층', tags:['역세권','학군우수'], lat:37.4901, lng:127.0436},
+  {id:1, name:'개포래미안포레스트', dong:'개포동', price:92000,  area:84, year:2019, floor:'12/35층', tags:['신축','역세권'],   lat:37.4805, lng:127.0521},
+  {id:2, name:'대치아이파크',       dong:'대치동', price:87000,  area:84, year:2011, floor:'8/22층',  tags:['학군우수','역세권'], lat:37.4943, lng:127.0601},
+  {id:3, name:'역삼센트럴아이파크', dong:'역삼동', price:95000,  area:84, year:2018, floor:'10/29층', tags:['역세권','투자추천'], lat:37.4998, lng:127.0357},
+  {id:4, name:'도곡렉슬',           dong:'도곡동', price:74000,  area:59, year:2006, floor:'6/20층',  tags:['역세권'],           lat:37.4869, lng:127.0476},
+  {id:5, name:'대치삼성래미안',     dong:'대치동', price:115000, area:99, year:2005, floor:'18/27층', tags:['학군우수','투자추천'], lat:37.4995, lng:127.0635},
+  {id:6, name:'개포자이프레지던스', dong:'개포동', price:88000,  area:84, year:2023, floor:'9/33층',  tags:['신축','투자추천'],   lat:37.4783, lng:127.0668},
+  {id:7, name:'역삼래미안',         dong:'역삼동', price:79000,  area:59, year:2005, floor:'7/24층',  tags:['역세권'],           lat:37.5006, lng:127.0445},
+  {id:8, name:'삼성동힐스테이트',   dong:'삼성동', price:105000, area:84, year:2008, floor:'14/30층', tags:['역세권','투자추천'], lat:37.5106, lng:127.0586},
+  {id:9, name:'청담자이',           dong:'청담동', price:132000, area:89, year:2011, floor:'11/35층', tags:['신축','역세권'],     lat:37.5197, lng:127.0533},
+  {id:10,name:'논현현대',           dong:'논현동', price:68000,  area:59, year:2000, floor:'5/15층',  tags:['역세권'],           lat:37.5112, lng:127.0345},
+  {id:11,name:'수서신동아',         dong:'수서동', price:72000,  area:84, year:1992, floor:'8/18층',  tags:['역세권','투자추천'], lat:37.4873, lng:127.1014},
+];
+const GRADS = ['linear-gradient(135deg,#667eea,#764ba2)','linear-gradient(135deg,#f093fb,#f5576c)','linear-gradient(135deg,#4facfe,#00f2fe)','linear-gradient(135deg,#43e97b,#38f9d7)','linear-gradient(135deg,#fa709a,#fee140)','linear-gradient(135deg,#30cfd0,#330867)'];
+const EMOJIS = ['🏢','🏗️','🏬','🏛️','🏠','🏘️'];
+MOCK_PROPS.forEach((p,i)=>{ p.rank=i+1; p.gu='강남구'; p.grad=GRADS[i%GRADS.length]; p.emoji=EMOJIS[i%EMOJIS.length]; });
+
+// ── 지도 부가 레이어 ───────────────────────────────────────────────────────────
+// 지하철·학군·편의시설: OSM(Overpass)에서 현재 화면 기준 실데이터를 불러옴 → 전 지역 작동
+const OVERPASS_LAYERS = {
+  subway:{ label:'지하철',   icon:'🚇', color:'#0984e3', q:['node["station"="subway"]','node["railway"="station"]["subway"="yes"]'] },
+  school:{ label:'학군',     icon:'🏫', color:'#e17055', q:['node["amenity"="school"]','way["amenity"="school"]'] },
+  store: { label:'편의시설', icon:'🏪', color:'#00b894', q:['node["shop"="mall"]','node["shop"="department_store"]','node["amenity"="marketplace"]'] },
+};
+// 개발계획: 서울 전역 주요 사업 (큐레이션 — [이름, 위도, 경도])
+const DEV_POIS = [
+  ['영동대로 복합개발',37.5110,127.0630],['수서역세권 개발',37.4870,127.1010],['잠실 MICE',37.5130,127.0730],
+  ['용산국제업무지구',37.5300,126.9650],['여의도 금융중심',37.5250,126.9250],['GTX-A 삼성역',37.5090,127.0630],
+  ['상암 DMC',37.5790,126.8900],['세운지구 재정비',37.5670,126.9910],['창동·상계 신경제',37.6530,127.0470],
+  ['광운대역세권',37.6230,127.0610],['마곡 산업단지',37.5600,126.8290],['청량리 역세권',37.5800,127.0470],
+];
+const POI_DEAL = { label:'실거래가', icon:'💰', color:'#636e72' };
+const POI_DEV  = { label:'개발계획', icon:'🏗️', color:'#f9a825' };
+
+// ── 상태 ──────────────────────────────────────────────────────────────────────
+let props = MOCK_PROPS.slice();
+let sel = null, leafletMap = null, leafletMarkers = {};
+let favorites = new Set(JSON.parse(localStorage.getItem('pi_favs') || '[]'));
+let state = { view:'map', query:'', filters:{ deal:'sale', price:'all', type:'apt', area:'all' } };
+let layerGroups = {};      // 켜진 레이어: name -> L.layerGroup
+let pinsVisible = true;
+let meMarker = null;
+
+// ── 헬퍼 ──────────────────────────────────────────────────────────────────────
+const won = (manwon) => (manwon/10000).toFixed(1).replace(/\.0$/,'') + '억';
+function saveFavs(){ localStorage.setItem('pi_favs', JSON.stringify([...favorites])); updateFavBadge(); }
+function updateFavBadge(){ const b=document.getElementById('navFavCnt'); if(b) b.textContent = favorites.size; }
+function toast(msg){
+  let t=document.getElementById('toast');
+  if(!t){ t=document.createElement('div'); t.id='toast'; t.className='toast'; document.body.appendChild(t); }
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),1800);
+}
+
+// ── 현재 보여줄 매물 목록 (탭/검색 필터 반영) ──────────────────────────────────
+function visibleProps(){
+  let list = props.slice();
+  if (state.view === 'fav') list = list.filter(p => favorites.has(p.id));
+  if (state.query){ const q = state.query; list = list.filter(p => p.name.includes(q) || p.dong.includes(q) || (p.gu||'').includes(q)); }
+  const f = state.filters || {};
+  if (f.price && f.price !== 'all') list = list.filter(p => inPrice(p.price, f.price));
+  if (f.area  && f.area  !== 'all') list = list.filter(p => inArea(p.area, f.area));
+  return list;
+}
+// 가격(만원→억)/면적(㎡) 구간 판정
+function inPrice(mw, k){ const e = mw/10000; return k==='u10'?e<10 : k==='10_20'?e>=10&&e<20 : k==='20_30'?e>=20&&e<30 : k==='o30'?e>=30 : true; }
+function inArea(a, k){ return k==='u60'?a<60 : k==='60_85'?a>=60&&a<85 : k==='85_135'?a>=85&&a<135 : k==='o135'?a>=135 : true; }
+
+// ── RENDER CARDS ──────────────────────────────────────────────────────────────
+function renderCards() {
+  const list = visibleProps();
+  const box = document.getElementById('cards');
+  document.getElementById('ccnt').textContent = list.length;
+  if (list.length === 0){
+    box.innerHTML = `<div class="empty-cards"><div class="ei">${state.view==='fav'?'🤍':'🔍'}</div>${state.view==='fav'?'관심 매물이 없습니다.<br>카드의 하트(♡)를 눌러 저장해 보세요.':'검색 결과가 없습니다.<br>단지명이나 동(예: 대치동)으로 검색하세요.'}</div>`;
+    return;
+  }
+  box.innerHTML = list.slice(0,60).map(p => `
+    <div class="pcard ${sel===p.id?'sel':''}" onclick="selProp(${p.id})">
+      <div class="pimg" style="background:${p.grad}">
+        <span>${p.emoji}</span>
+        <div class="rbadge">추천 ${p.rank}</div>
+        <button class="hbtn ${favorites.has(p.id)?'fav':''}" onclick="event.stopPropagation();toggleFav(${p.id})">${favorites.has(p.id)?'♥':'♡'}</button>
+      </div>
+      <div class="pbody">
+        <div class="pprice">${won(p.price)}</div>
+        <div class="pname">${p.name}</div>
+        <div class="paddr">${p.gu||'강남구'} ${p.dong}</div>
+        <div class="pmeta"><span>전용 ${p.area}㎡</span><span>${p.year}년</span><span>${p.floor}</span></div>
+        <div class="ptags">${p.tags.map(t=>`<span class="ptag ${t==='역세권'?'ts':t.includes('학군')?'tk':t==='신축'?'tn':'ti'}">${t}</span>`).join('')}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ── 관심 매물 ─────────────────────────────────────────────────────────────────
+function toggleFav(id){
+  if (favorites.has(id)){ favorites.delete(id); toast('관심 매물에서 제거했습니다'); }
+  else { favorites.add(id); toast('관심 매물에 추가했습니다 ♥'); }
+  saveFavs();
+  renderCards();
+}
+
+// ── SELECT PROP ───────────────────────────────────────────────────────────────
+function selProp(id) {
+  sel = id;
+  // Leaflet 핀 선택 표시
+  props.forEach(p => {
+    const pin  = document.getElementById('lpin'+p.id);
+    const tail = document.getElementById('ltail'+p.id);
+    if (pin)  pin.className  = 'price-marker'      + (p.id===id?' sel':'');
+    if (tail) tail.className = 'price-marker-tail' + (p.id===id?' sel':'');
+  });
+  // 지도 중심 이동
+  const p = props.find(x=>x.id===id);
+  if (leafletMap && p) leafletMap.panTo([p.lat, p.lng]);
+  renderCards();
+  if (p) addAiMsg(`<strong>${p.name}</strong> 분석 결과<br><br>📍 ${p.gu||'강남구'} ${p.dong}<br>💰 ${won(p.price)} · 전용 ${p.area}㎡ · ${p.floor}<br>🏗️ ${p.year}년 준공 (${2026-p.year}년차)<br><br>${p.tags.map(t=>t==='역세권'?'✅ 역세권 — 교통 접근성 우수':t.includes('학군')?'✅ 학군우수 — 강남 상위권 배정 가능':t==='신축'?'✅ 신축 — 관리비 절감, 커뮤니티 우수':'✅ 투자추천 — 실거래가 상승 추세').join('<br>')}`);
+}
+
+// ── NAV (뷰 전환) ──────────────────────────────────────────────────────────────
+function setNav(el){
+  document.querySelectorAll('.nv').forEach(n=>n.classList.remove('on'));
+  el.classList.add('on');
+  state.view = el.dataset.view || 'map';
+  state.query = '';
+  const si = document.getElementById('mainSearch'); if (si) si.value = '';
+  sel = null;
+  renderCards();
+  applyViewSide();
+}
+function applyViewSide(){
+  const v = state.view;
+  // AI 분석 탭 → 좌측 전체 리포트 뷰 토글
+  const av = document.getElementById('analysisView');
+  if (av){
+    if (v === 'ai'){ renderAnalysis(); av.classList.add('on'); }
+    else { av.classList.remove('on'); leafletMap && leafletMap.invalidateSize(); }
+  }
+  if (v === 'fav'){
+    const n = favorites.size;
+    addAiMsg(n ? `❤️ <strong>관심 매물 ${n}개</strong>를 보고 있어요. 카드를 누르면 상세 분석을 드립니다.`
+               : `관심 매물이 아직 없습니다. 매물 카드의 하트(♡)를 눌러 저장하면 여기 모아 볼 수 있어요.`);
+  } else if (v === 'ai'){
+    addAiMsg(`🤖 <strong>AI 분석 리포트</strong>를 좌측에 펼쳤어요. 핵심 지표·가격 분포·추천 TOP·단지 특성·개발 계획을 한눈에 볼 수 있어요.`);
+  } else if (v === 'insight'){
+    addAiMsg(`📊 <strong>시장 인사이트 (강남구)</strong><br><br>📈 실거래가 최근 6개월 +6.7%<br>🏗️ 영동대로 지하공간 복합개발 — 2026 완료 예정<br>🚉 수서역세권 개발 — 2028 완료 예정<br>💡 신축·역세권 단지 중심으로 수요 견조`);
+  } else if (v === 'home'){
+    addAiMsg(`🏠 강남구 매물 ${props.length}개를 지도에 표시했어요. 상단 검색이나 좌측 레이어(지하철·학군 등)로 원하는 조건을 찾아보세요.`);
+  }
+}
+
+// ── AI 분석 리포트 렌더 (props 데이터 기반) ────────────────────────────────────
+function renderAnalysis(){
+  const view = document.getElementById('analysisView');
+  if (!view) return;
+  if (!props.length){ view.innerHTML = `<div class="aview-inner"><div class="aview-h"><div class="aview-title">🤖 AI 분석 리포트</div></div><div style="padding:40px 4px;color:var(--muted)">실거래가 데이터를 불러오는 중입니다…</div></div>`; return; }
+  const prices = props.map(p=>p.price);
+  const avg = Math.round(prices.reduce((a,b)=>a+b,0)/prices.length);
+  const max = Math.max(...prices), min = Math.min(...prices);
+  // 분석 범위(로딩된 구) 라벨
+  const guSet = [...new Set(props.map(p=>p.gu).filter(Boolean))];
+  const scope = guSet.length===0 ? '강남구' : guSet.length===1 ? guSet[0] : guSet.length<=3 ? guSet.join('·') : `서울 ${guSet.length}개 구`;
+
+  // 가격 분포 — 실제 데이터 범위(min~max)에 맞춰 4구간 동적 분할 (price 단위=만원)
+  const lo = Math.floor(min/10000), hi = Math.ceil(max/10000);   // 억 단위
+  const step = Math.max(1, Math.ceil((hi - lo)/4));
+  const eok = p => p/10000;
+  const buckets = [0,1,2,3].map(i => {
+    const a = lo + i*step, b = a + step, last = i===3;
+    return { lbl: last ? `${a}억~` : `${a}~${b}억`,
+             test: last ? (p=>eok(p)>=a) : (p=>eok(p)>=a && eok(p)<b) };
+  });
+  const counts = buckets.map(b=>prices.filter(b.test).length);
+  const maxc = Math.max(1, ...counts);
+
+  // 단지 특성(태그) 분포
+  const tagDefs = [['🚇','역세권','역세권'],['🏗️','신축','신축'],['🏫','학군','학군'],['📈','투자','투자']];
+  const tagCounts = tagDefs.map(([ic,label,m]) => [ic, label, props.filter(p=>p.tags.some(x=>x.includes(m))).length]);
+
+  // 추천 TOP 3 (rank 순)
+  const top = props.slice().sort((a,b)=>a.rank-b.rank).slice(0,3);
+
+  // 주요 개발 계획
+  const devs = [
+    ['🏙️','영동대로 지하공간 복합개발','2026년 완료 예정 · 교통 및 상권 활성화 기대'],
+    ['🚉','수서역세권 개발','2028년 완료 예정 · 주거·업무·상업 복합단지'],
+    ['🏗️','구룡마을 도시개발','정비사업 추진 중 · 대규모 친환경 주거단지'],
+    ['🚇','위례신사선 (추진)','강남권 남북 교통축 보강 기대'],
+  ];
+
+  view.innerHTML = `
+    <div class="aview-inner">
+      <div class="aview-h">
+        <div>
+          <div class="aview-title">🤖 AI 분석 리포트 <span>· ${scope}</span></div>
+          <div class="aview-sub">매물 ${props.length}개 기준 · 평균 <b>${won(avg)}</b> · 최고 ${won(max)} · 최저 ${won(min)}</div>
+        </div>
+      </div>
+
+      <div class="aview-sec-t">핵심 지표</div>
+      <div class="sgrid">
+        <div class="si"><div class="si-l">실거래가 추이</div><div class="si-trend">상승 ↗</div><div class="si-sub">최근 6개월 +6.7%</div><div class="sbar"><div class="sfill" style="width:67%;background:var(--green)"></div></div></div>
+        <div class="si"><div class="si-l">학군 점수</div><div style="display:flex;align-items:baseline;gap:3px"><div class="si-big">91</div><div class="si-dn">/100</div></div><div class="si-sub">강남구 상위 5%</div><div class="sbar"><div class="sfill" style="width:91%;background:var(--accent)"></div></div></div>
+        <div class="si"><div class="si-l">교통 점수</div><div style="display:flex;align-items:baseline;gap:3px"><div class="si-big">88</div><div class="si-dn">/100</div></div><div class="si-sub">역세권·2호선 우수</div><div class="sbar"><div class="sfill" style="width:88%;background:var(--blue)"></div></div></div>
+        <div class="si"><div class="si-l">투자 점수</div><div style="display:flex;align-items:baseline;gap:3px"><div class="si-big">87</div><div class="si-dn">/100</div></div><div class="si-sub">높은 미래가치</div><div class="sbar"><div class="sfill" style="width:87%;background:var(--yellow)"></div></div></div>
+      </div>
+
+      <div class="aview-sec-t">가격 분포</div>
+      <div class="dist">
+        ${buckets.map((b,i)=>`<div class="dist-row"><div class="dist-lbl">${b.lbl}</div><div class="dist-bar"><div class="dist-fill" style="width:${Math.round(counts[i]/maxc*100)}%"></div></div><div class="dist-n">${counts[i]}개</div></div>`).join('')}
+      </div>
+
+      <div class="aview-sec-t">추천 TOP 3</div>
+      <div class="atop">
+        ${top.map(p=>`<div class="atop-i" onclick="gotoProp(${p.id})"><div class="atop-rank">${p.rank}</div><div class="atop-main"><div class="atop-name">${p.name}</div><div class="atop-meta">${p.gu||'강남구'} ${p.dong} · 전용 ${p.area}㎡ · ${p.year}년 · ${p.tags.join(' · ')}</div></div><div class="atop-price">${won(p.price)}</div></div>`).join('')}
+      </div>
+
+      <div class="aview-sec-t">단지 특성</div>
+      <div class="tagrow">
+        ${tagCounts.map(([ic,label,c])=>`<div class="tagcnt">${ic} ${label} <b>${c}</b></div>`).join('')}
+      </div>
+
+      <div class="aview-sec-t">주요 개발 계획</div>
+      <div class="dplist">
+        ${devs.map(([ic,n,d])=>`<div class="dpi"><div class="dpico">${ic}</div><div><div class="dpn">${n}</div><div class="dpd">${d}</div></div></div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// 추천 클릭 → 지도 탭으로 전환 후 해당 매물 선택
+function gotoProp(id){
+  const mapTab = document.querySelector('.nv[data-view="map"]');
+  if (mapTab) setNav(mapTab);
+  selProp(id);
+}
+
+// ── 지도 레이어 토글 ──────────────────────────────────────────────────────────
+// subway/school/store = OSM(Overpass) 동적 · dev = 서울 큐레이션 · deal = 실데이터 매물가
+async function toggleLayer(name, el){
+  if (!leafletMap) return;
+  // 끄기
+  if (layerGroups[name]){
+    leafletMap.removeLayer(layerGroups[name]);
+    delete layerGroups[name];
+    el && el.classList.remove('on');
+    if (name === 'deal') document.getElementById('togDeal')?.classList.add('off');
+    return;
+  }
+  // 켜기
+  el && el.classList.add('on');
+  if (name === 'deal') document.getElementById('togDeal')?.classList.remove('off');
+
+  if (OVERPASS_LAYERS[name]){                       // 지하철·학군·편의시설 (OSM 실데이터)
+    const cfg = OVERPASS_LAYERS[name];
+    toast(`${cfg.icon} ${cfg.label} 불러오는 중…`);
+    try {
+      const pts = await fetchOverpass(name);
+      if (!el || !el.classList.contains('on')) return;   // 그새 껐으면 취소
+      layerGroups[name] = renderPoiGroup(pts, cfg.icon, cfg.color).addTo(leafletMap);
+      toast(pts.length ? `${cfg.icon} ${cfg.label} ${pts.length}곳` : `${cfg.icon} 이 화면엔 ${cfg.label} 정보가 없어요`);
+    } catch(e){
+      el && el.classList.remove('on');
+      toast(`${cfg.icon} ${cfg.label}를 불러오지 못했어요 (잠시 후 다시)`);
+    }
+    return;
+  }
+
+  // 정적/실데이터 레이어
+  let cfg, pts;
+  if (name === 'dev'){ cfg = POI_DEV; pts = DEV_POIS; }
+  else if (name === 'deal'){
+    cfg = POI_DEAL;
+    const src = (realProps.length ? realProps : props).slice(0, 50);
+    pts = src.map(p => [won(p.price), p.lat, p.lng]);
+  } else return;
+  layerGroups[name] = renderPoiGroup(pts, cfg.icon, cfg.color).addTo(leafletMap);
+  toast(`${cfg.icon} ${cfg.label} 표시`);
+}
+
+// POI 배열 [이름,위도,경도] → Leaflet 레이어 그룹
+function renderPoiGroup(pts, icon, color){
+  const g = L.layerGroup();
+  pts.forEach(([nm,lat,lng])=>{
+    const ic = L.divIcon({ className:'', iconAnchor:[13,13], iconSize:[26,26],
+      html:`<div class="poi"><div class="poi-dot" style="border-color:${color}">${icon}</div><div class="poi-lbl">${nm}</div></div>` });
+    L.marker([lat,lng],{icon:ic}).addTo(g);
+  });
+  return g;
+}
+
+// OSM Overpass: 현재 지도 화면(bbox)의 POI 실데이터 조회 (최대 80곳)
+async function fetchOverpass(name){
+  const cfg = OVERPASS_LAYERS[name];
+  const b = leafletMap.getBounds();
+  const bbox = `${b.getSouth().toFixed(4)},${b.getWest().toFixed(4)},${b.getNorth().toFixed(4)},${b.getEast().toFixed(4)}`;
+  const ql = `[out:json][timeout:25];(${cfg.q.map(q=>`${q}(${bbox});`).join('')});out center 80;`;
+  const r = await fetch('https://overpass-api.de/api/interpreter', {
+    method:'POST', body:'data='+encodeURIComponent(ql), signal: AbortSignal.timeout(15000),
+  });
+  const d = await r.json();
+  const seen = new Set(), out = [];
+  (d.elements||[]).forEach(e=>{
+    const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lng ?? e.center?.lon;
+    if (lat==null || lng==null) return;
+    const nm = (e.tags && e.tags.name) ? e.tags.name : cfg.label;
+    const key = nm + lat.toFixed(4) + lng.toFixed(4);
+    if (seen.has(key)) return; seen.add(key);
+    out.push([nm, lat, lng]);
+  });
+  return out.slice(0, 80);
+}
+
+// 지도 이동 시 켜져있는 동적 레이어(OSM·실거래가)를 현재 화면으로 갱신
+async function refreshDynamicLayers(){
+  for (const name of Object.keys(OVERPASS_LAYERS)){
+    if (!layerGroups[name]) continue;
+    try {
+      const pts = await fetchOverpass(name);
+      if (!layerGroups[name]) continue;             // 그새 꺼짐
+      leafletMap.removeLayer(layerGroups[name]);
+      const cfg = OVERPASS_LAYERS[name];
+      layerGroups[name] = renderPoiGroup(pts, cfg.icon, cfg.color).addTo(leafletMap);
+    } catch(e){ /* 실패 시 기존 유지 */ }
+  }
+  if (layerGroups.deal){                             // 실거래가 레이어도 새 매물로 갱신
+    leafletMap.removeLayer(layerGroups.deal);
+    const src = (realProps.length ? realProps : props).slice(0, 50);
+    layerGroups.deal = renderPoiGroup(src.map(p=>[won(p.price),p.lat,p.lng]), POI_DEAL.icon, POI_DEAL.color).addTo(leafletMap);
+  }
+}
+// 우측 '실거래가' 토글 ↔ 좌측 '실거래가' 레이어 동기화
+function toggleDeals(el){
+  el.classList.toggle('off');
+  const on = !el.classList.contains('off');
+  const btn = document.querySelector('.ltbtn[data-layer="deal"]');
+  if (on && !layerGroups.deal) toggleLayer('deal', btn);
+  else if (!on && layerGroups.deal) toggleLayer('deal', btn);
+}
+// 매물 핀 표시/숨김
+function togglePins(el){
+  el.classList.toggle('off');
+  pinsVisible = !el.classList.contains('off');
+  Object.values(leafletMarkers).forEach(m => pinsVisible ? m.addTo(leafletMap) : leafletMap.removeLayer(m));
+  toast(pinsVisible ? '매물 핀 표시' : '매물 핀 숨김');
+}
+
+// ── 현재 위치 (GPS) ────────────────────────────────────────────────────────────
+function locateMe(){
+  if (!leafletMap) return;
+  if (!navigator.geolocation){ toast('이 브라우저는 위치 정보를 지원하지 않습니다'); return; }
+  toast('현재 위치를 찾는 중…');
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude:lat, longitude:lng } = pos.coords;
+      if (meMarker) leafletMap.removeLayer(meMarker);
+      meMarker = L.marker([lat,lng], { icon:L.divIcon({ className:'', html:'<div class="me-dot"></div>', iconSize:[18,18], iconAnchor:[9,9] }) }).addTo(leafletMap);
+      leafletMap.setView([lat,lng], 14);
+      toast('현재 위치로 이동했습니다');
+    },
+    () => toast('위치 권한이 거부되었거나 가져올 수 없습니다')
+  );
+}
+
+// ── 지도 타입 (지도/위성) ──────────────────────────────────────────────────────
+function setMT(el) {
+  document.querySelectorAll('.mtbtn').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+  if (!leafletMap) return;
+  const isSat = el.textContent === '위성';
+  leafletMap.eachLayer(l => { if (l._url) leafletMap.removeLayer(l); });
+  const tileUrl = isSat
+    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(leafletMap);
+}
+function zm(d) { if (leafletMap) leafletMap.setZoom(leafletMap.getZoom() + d); }
+
+// ── CHAT ─────────────────────────────────────────────────────────────────────
+const replies = {
+  '재개발':'재개발 예정지 현황 (강남구):\n\n🏗️ 압구정 현대아파트 — 2026년 착공 예정\n🏗️ 대치 은마아파트 — 정밀안전진단 통과\n🏗️ 개포 주공 1단지 — 진행 중\n\n재개발 지역은 가격 선반영 여부를 꼭 확인하세요.',
+  '역세권':'역세권 단지 추천 (2호선·3호선 기준):\n\n🥇 역삼센트럴아이파크 — 역삼역 도보 2분\n🥈 개포래미안포레스트 — 개포동역 도보 4분\n🥉 대치아이파크 — 대치역 도보 7분',
+  '전세가율':'전세가율 높은 단지:\n\n1위 대치아이파크 — 62%\n2위 래미안 도곡 카운티 — 58%\n3위 역삼센트럴 — 55%\n\n전세가율 60% 이상은 갭투자 위험 주의.',
+  '학군':'학군 우수 단지:\n\n⭐ 대치아이파크 — 대치동 학원가 인접\n⭐ 래미안 도곡 카운티 — 개포고·도곡중 배정\n⭐ 개포래미안포레스트 — 신흥 학군 형성 중',
+  '신축':'2015년 이후 신축 단지:\n\n🏗️ 개포래미안포레스트 (2019) — 최신축\n🏗️ 역삼센트럴아이파크 (2018)\n\n신축일수록 관리비 절감 및 편의시설 우수.',
+};
+
+let chatHistory = [];     // OpenRouter 대화 기록 (최근 N턴)
+let chatBusy = false;
+
+// 현재 지도에 로딩된 매물 → LLM 컨텍스트 요약
+function buildChatContext(){
+  const list = (typeof visibleProps==='function' ? visibleProps() : props) || [];
+  if (!list.length) return '';
+  const prices = list.map(p=>p.price);
+  const avg = Math.round(prices.reduce((a,b)=>a+b,0)/prices.length);
+  const guSet = [...new Set(list.map(p=>p.gu).filter(Boolean))];
+  const top = list.slice().sort((a,b)=>b.price-a.price).slice(0,20)
+    .map(p=>`- ${p.gu||''} ${p.dong} ${p.name}: ${won(p.price)}, 전용 ${p.area}㎡, ${p.year}년`).join('\n');
+  return `지역: ${guSet.join(', ')||'강남구'} | 단지 ${list.length}개 | 평균 ${won(avg)} (최고 ${won(Math.max(...prices))}, 최저 ${won(Math.min(...prices))})\n매물(가격순):\n${top}`;
+}
+function addTyping(){
+  const c=document.getElementById('chat'), id='typing'+Date.now();
+  c.innerHTML+=`<div class="ma" id="${id}"><div class="marow"><div class="maic">Pi</div><div><div class="bl" style="color:var(--muted)">🤖 에이전트 분석 중… <span style="font-size:11px">(실거래가 조회·분석, 최대 1분)</span></div></div></div></div>`;
+  c.scrollTop=c.scrollHeight; return id;
+}
+function removeTyping(id){ document.getElementById(id)?.remove(); }
+
+async function send() {
+  const el = document.getElementById('ci');
+  const t = el.value.trim(); if(!t || chatBusy) return; el.value='';
+  addUserMsg(t);
+  chatBusy = true;
+  const tid = addTyping();
+  try {
+    // 현재 지도에서 보고 있는 구(區)를 힌트로 전달 → 에이전트가 "이 동네"를 해석
+    const guSet = [...new Set((props||[]).map(p=>p.gu).filter(Boolean))];
+    const hint = guSet.length ? `사용자는 현재 지도에서 ${guSet.slice(0,6).join(', ')} 지역 매물을 보고 있음` : '';
+    const r = await fetch(`${API_BASE}/api/agent`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ message:t, hint }),
+    });
+    const d = await r.json();
+    removeTyping(tid);
+    addAiMsg((d.reply || '응답을 받지 못했어요.').replace(/\n/g,'<br>'));
+  } catch(e){
+    removeTyping(tid);
+    const k = Object.keys(replies).find(k=>t.includes(k));   // 서버 꺼졌을 때 캔 응답 폴백
+    addAiMsg((k ? replies[k] : '⚠️ 에이전트 서버에 연결하지 못했어요. <code>node server.js</code>가 켜져 있는지 확인해 주세요.').replace(/\n/g,'<br>'));
+  }
+  chatBusy = false;
+}
+function sendQ(el){document.getElementById('ci').value=el.textContent;send();}
+
+function addUserMsg(t) {
+  const c=document.getElementById('chat');
+  const now=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  c.innerHTML+=`<div class="mu"><div class="bl">${t}</div><div class="mt">${now}</div></div>`;
+  c.scrollTop=c.scrollHeight;
+}
+function addAiMsg(t) {
+  const c=document.getElementById('chat');
+  const now=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  c.innerHTML+=`<div class="ma"><div class="marow"><div class="maic">Pi</div><div><div class="bl">${t}</div><div class="mt">${now}</div></div></div></div>`;
+  c.scrollTop=c.scrollHeight;
+}
+
+// ── LEAFLET MAP ───────────────────────────────────────────────────────────────
+function initLeaflet() {
+  leafletMap = L.map('leafletMap', {
+    center: [37.4980, 127.0520],
+    zoom: 13,
+    zoomControl: false,
+    attributionControl: false,
+  });
+
+  // OSM 타일 (한국 지도 잘 지원)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    subdomains: ['a','b','c'],
+  }).addTo(leafletMap);
+
+  // flex 레이아웃에서 크기 재계산 — 타일 로딩 핵심
+  setTimeout(() => leafletMap.invalidateSize(), 100);
+  setTimeout(() => leafletMap.invalidateSize(), 500);
+
+  renderMapMarkers();
+  initSplitters();
+
+  // 창 크기 변경 시에도 재계산
+  window.addEventListener('resize', () => leafletMap.invalidateSize());
+
+  // 지도 이동/줌 종료 → 화면에 들어온 구를 동적 로딩 (디바운스)
+  leafletMap.on('moveend zoomend', () => {
+    clearTimeout(_moveTimer);
+    _moveTimer = setTimeout(() => { loadVisibleRegions(); refreshDynamicLayers(); }, 350);
+  });
+  mapReady = true;
+  if (wantRealMode) enableRealMode();      // 서버 확인이 먼저 끝난 경우
+
+  console.log('✅ Leaflet 지도 로드 완료');
+}
+
+// 가격 핀 커스텀 마커 (props 갱신 시 재호출)
+function renderMapMarkers() {
+  Object.values(leafletMarkers).forEach(m => leafletMap.removeLayer(m));
+  leafletMarkers = {};
+  visibleProps().forEach(p => {
+    const icon = L.divIcon({
+      className: '',
+      html: `
+        <div class="price-marker-wrap">
+          <div class="price-marker ${sel===p.id?'sel':''}" id="lpin${p.id}">${won(p.price)}</div>
+          <div class="price-marker-tail ${sel===p.id?'sel':''}" id="ltail${p.id}"></div>
+        </div>`,
+      iconAnchor: [36, 38],
+      iconSize: [90, 38],
+    });
+    const marker = L.marker([p.lat, p.lng], { icon }).on('click', () => selProp(p.id));
+    if (pinsVisible) marker.addTo(leafletMap);
+    leafletMarkers[p.id] = marker;
+  });
+}
+
+// ── 패널 리사이즈 (드래그) ─────────────────────────────────────────────────────
+function initSplitters() {
+  // 세로 핸들: 좌측 영역 ↔ 채팅 패널 (너비 조절)
+  const vs = document.getElementById('vsplit');
+  const rp = document.querySelector('.rp');
+  if (vs && rp) {
+    vs.addEventListener('mousedown', e => {
+      e.preventDefault();
+      document.body.classList.add('resizing'); vs.classList.add('drag');
+      const move = ev => {
+        const w = Math.min(720, Math.max(300, window.innerWidth - ev.clientX));
+        rp.style.width = w + 'px';
+        leafletMap && leafletMap.invalidateSize();
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        document.body.classList.remove('resizing'); vs.classList.remove('drag');
+        leafletMap && leafletMap.invalidateSize();
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+  }
+  // 가로 핸들: 지도 ↔ 추천 매물 카드 (높이 조절)
+  const hs = document.getElementById('hsplit');
+  const cards = document.querySelector('.cards');
+  if (hs && cards) {
+    hs.addEventListener('mousedown', e => {
+      e.preventDefault();
+      document.body.classList.add('resizing-v'); hs.classList.add('drag');
+      const move = ev => {
+        const wrap = cards.parentElement.getBoundingClientRect();
+        const h = Math.min(wrap.height - 170, Math.max(90, wrap.bottom - ev.clientY));
+        cards.style.height = h + 'px';
+        leafletMap && leafletMap.invalidateSize();
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        document.body.classList.remove('resizing-v'); hs.classList.remove('drag');
+        leafletMap && leafletMap.invalidateSize();
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+  }
+  initRpResizer();
+}
+
+// ── 채팅 ↔ 분석영역 높이 조절 (드래그 + 접기, 크기 기억) ──────────────────────────
+function applyRpHeight(h){
+  const bottom=document.getElementById('rpbottom'), collapse=document.getElementById('rpcollapse');
+  if(!bottom) return;
+  h=Math.max(0,Math.min(460,Math.round(h)));
+  bottom.style.height=h+'px';
+  if(h>8) bottom.dataset.last=h;
+  if(collapse) collapse.textContent = h<=8 ? '▴' : '▾';
+  try{ localStorage.setItem('pi_rpbottom', h); }catch{}
+}
+function toggleBottom(ev){
+  if(ev) ev.stopPropagation();
+  const bottom=document.getElementById('rpbottom');
+  const cur=bottom.getBoundingClientRect().height;
+  applyRpHeight(cur>8 ? 0 : parseInt(bottom.dataset.last||'240'));
+}
+function initRpResizer(){
+  const split=document.getElementById('rpsplit'), bottom=document.getElementById('rpbottom');
+  if(!split||!bottom) return;
+  const saved=parseInt(localStorage.getItem('pi_rpbottom')||'');
+  applyRpHeight(isNaN(saved) ? 210 : saved);   // 기본값: 채팅을 더 크게
+  split.addEventListener('mousedown', e=>{
+    if(e.target.id==='rpcollapse') return;       // 접기 버튼은 드래그 아님
+    e.preventDefault();
+    document.body.classList.add('resizing-v'); split.classList.add('drag');
+    const move=ev=>{ const r=bottom.getBoundingClientRect(); applyRpHeight(r.bottom-ev.clientY); };
+    const up=()=>{ document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); document.body.classList.remove('resizing-v'); split.classList.remove('drag'); };
+    document.addEventListener('mousemove',move); document.addEventListener('mouseup',up);
+  });
+}
+
+// ── API 연동 (서버가 떠 있고 실제 키가 있으면 자동으로 실데이터로 전환) ─────────────
+const API_BASE = 'http://localhost:3000';
+let apiOnline = false;
+
+// 동(洞) 대략 좌표 — 실거래가 데이터에는 좌표가 없어 동 중심 근처에 배치
+const DONG_COORDS = {
+  '도곡동':[37.4901,127.0436],'개포동':[37.4790,127.0560],'대치동':[37.4945,127.0631],
+  '역삼동':[37.5000,127.0364],'삼성동':[37.5140,127.0565],'청담동':[37.5197,127.0470],
+  '논현동':[37.5112,127.0345],'수서동':[37.4873,127.1014],'압구정동':[37.5270,127.0286],
+  '신사동':[37.5163,127.0203],'세곡동':[37.4670,127.1030],'일원동':[37.4880,127.0860],
+  '자곡동':[37.4745,127.1015],'율현동':[37.4700,127.1090],
+};
+
+function setBadge(text, color, bg){
+  const b = document.getElementById('apiBadge'); if (!b) return;
+  b.textContent = text;
+  if (color) b.style.color = color;
+  if (bg) b.style.background = bg;
+}
+
+async function checkServer() {
+  try {
+    const r = await fetch(`${API_BASE}/api/status`, { signal: AbortSignal.timeout(1500) });
+    const d = await r.json();
+    apiOnline = true;
+    if (d.apiKeySet){
+      setBadge('✅ 실거래가 API · 지도를 움직여 지역 탐색', 'var(--green)', 'rgba(0,184,148,.15)');
+      wantRealMode = true;
+      if (mapReady) enableRealMode();
+    } else {
+      setBadge('⚠️ 서버 ON · 목업 모드 (.env 키 필요)', 'var(--yellow)', 'rgba(249,168,37,.15)');
+    }
+  } catch {
+    apiOnline = false;
+    // 서버가 없어도 화면은 내장 목업으로 완전히 동작합니다.
+    setBadge('🟣 목업 모드 (서버 미실행 · 데모 데이터)', 'var(--accent)', 'var(--accent-l)');
+  }
+}
+
+// ── 서울 25개 구: 지도 이동에 따라 실거래가를 동적으로 누적 로딩 ──────────────────
+// 실거래가 API엔 좌표가 없어 동(洞) 좌표(있으면) 또는 구 중심 + 분산으로 배치한다.
+const SEOUL_DISTRICTS = [
+  {gu:'종로구',code:'11110',lat:37.5735,lng:126.9790},{gu:'중구',code:'11140',lat:37.5636,lng:126.9976},
+  {gu:'용산구',code:'11170',lat:37.5326,lng:126.9905},{gu:'성동구',code:'11200',lat:37.5634,lng:127.0369},
+  {gu:'광진구',code:'11215',lat:37.5385,lng:127.0823},{gu:'동대문구',code:'11230',lat:37.5744,lng:127.0396},
+  {gu:'중랑구',code:'11260',lat:37.6063,lng:127.0925},{gu:'성북구',code:'11290',lat:37.5894,lng:127.0167},
+  {gu:'강북구',code:'11305',lat:37.6396,lng:127.0257},{gu:'도봉구',code:'11320',lat:37.6688,lng:127.0471},
+  {gu:'노원구',code:'11350',lat:37.6542,lng:127.0568},{gu:'은평구',code:'11380',lat:37.6027,lng:126.9291},
+  {gu:'서대문구',code:'11410',lat:37.5791,lng:126.9368},{gu:'마포구',code:'11440',lat:37.5663,lng:126.9019},
+  {gu:'양천구',code:'11470',lat:37.5170,lng:126.8665},{gu:'강서구',code:'11500',lat:37.5509,lng:126.8495},
+  {gu:'구로구',code:'11530',lat:37.4954,lng:126.8874},{gu:'금천구',code:'11545',lat:37.4569,lng:126.8956},
+  {gu:'영등포구',code:'11560',lat:37.5264,lng:126.8963},{gu:'동작구',code:'11590',lat:37.5124,lng:126.9393},
+  {gu:'관악구',code:'11620',lat:37.4784,lng:126.9516},{gu:'서초구',code:'11650',lat:37.4837,lng:127.0324},
+  {gu:'강남구',code:'11680',lat:37.4959,lng:127.0664},{gu:'송파구',code:'11710',lat:37.5145,lng:127.1059},
+  {gu:'강동구',code:'11740',lat:37.5301,lng:127.1238},
+];
+
+let realMode = false, wantRealMode = false, mapReady = false;
+let realProps = [];                       // 누적된 실데이터 매물
+const loadedRegions = new Set();          // 이미 로딩한 구 코드
+let pidSeq = 0;                           // 전역 고유 매물 ID
+let _moveTimer = null;
+
+// 실데이터 모드 진입: 목업 비우고 현재 화면의 구들을 로딩
+function enableRealMode(){
+  if (realMode) return;
+  realMode = true;
+  props = []; realProps = []; loadedRegions.clear(); sel = null;
+  renderCards(); if (leafletMap) renderMapMarkers();
+  loadVisibleRegions();
+  setTimeout(loadVisibleRegions, 600);     // 레이아웃(invalidateSize) 후 보강 로딩
+}
+
+// 현재 지도 화면(bounds)에 중심이 들어온 구들을 1회씩 로딩
+function loadVisibleRegions(){
+  if (!realMode || !leafletMap) return;
+  const b = leafletMap.getBounds();
+  SEOUL_DISTRICTS.forEach(d => {
+    if (!loadedRegions.has(d.code) && b.contains([d.lat, d.lng])) loadRegion(d);
+  });
+}
+
+// 한 구의 실거래가 로딩 (당월은 신고지연 → 직전 1~2개월 시도)
+async function loadRegion(d){
+  loadedRegions.add(d.code);                // 중복 호출 방지 (먼저 마킹)
+  for (let back = 1; back <= 2; back++){
+    const dt = new Date(); dt.setMonth(dt.getMonth() - back);
+    const ym = `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}`;
+    try {
+      const r = await fetch(`${API_BASE}/api/apt-trade?region=${d.code}&ym=${ym}&rows=60`);
+      const data = await r.json();
+      if (data.authError){
+        setBadge(data.authError===403 ? '⚠️ API 미승인 (403)' : '⚠️ 인증키 오류 (401)', 'var(--red)', 'rgba(225,112,85,.15)');
+        return;
+      }
+      if (data.ok && data.items && data.items.length){ appendRegionProps(data.items, d); return; }
+    } catch(e){
+      console.warn('구 로딩 실패:', d.gu, e.message);
+      loadedRegions.delete(d.code);          // 네트워크 오류면 재시도 허용
+      return;
+    }
+  }
+  // 두 달 모두 빈 경우엔 마킹 유지(불필요한 재호출 방지)
+}
+
+// API items(한 구) → realProps 누적 후 카드/지도 갱신
+function appendRegionProps(items, d){
+  const grouped = {};
+  items.forEach(i => { if(i.apartmentName) (grouped[i.apartmentName] = grouped[i.apartmentName] || []).push(i); });
+  Object.keys(grouped).slice(0, 14).forEach(name => {
+    const arr = grouped[name], it = arr[0];
+    const avg = Math.round(arr.reduce((a,b)=>a + (parseInt(b.amount)||0), 0) / arr.length);
+    if (!avg) return;
+    const hasDong = !!DONG_COORDS[it.dong];
+    const c = DONG_COORDS[it.dong] || [d.lat, d.lng];
+    const j = hasDong ? 0.004 : 0.014;       // 동 좌표 있으면 미세, 없으면 구 전역 분산
+    const yr = it.year || 0;
+    const tags = ['실거래'];
+    if (yr >= 2015) tags.push('신축');
+    if (['대치동','도곡동','개포동','일원동','역삼동','목동','중계동','반포동','잠원동','여의도동','이촌동'].includes(it.dong)) tags.push('학군');
+    tags.push('역세권');
+    if (yr >= 2010 || avg >= 200000) tags.push('투자');
+    realProps.push({
+      id: pidSeq++, name, gu: d.gu, dong: it.dong || d.gu, price: avg,
+      area: it.area || 84, year: yr || 2010, floor: `${it.floor||10}층`, tags,
+      lat: c[0] + (Math.random()-0.5)*j, lng: c[1] + (Math.random()-0.5)*j,
+    });
+  });
+  reRankReal();
+  props = realProps;
+  scheduleRender();                          // 여러 구 동시 로딩 시 렌더 묶기
+  setBadge(`✅ 실거래가 · ${realProps.length}개 단지 · ${loadedRegions.size}개 구`, 'var(--green)', 'rgba(0,184,148,.15)');
+}
+
+// 카드/마커 렌더를 디바운스로 합쳐 버스트 로딩 시 버벅임 방지
+let _renderTimer = null;
+function scheduleRender(){
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(()=>{ renderCards(); if (leafletMap) renderMapMarkers(); }, 120);
+}
+
+// 가격 내림차순으로 추천 순위/색 재부여
+function reRankReal(){
+  realProps.sort((a,b)=> b.price - a.price);
+  realProps.forEach((p,i)=>{ p.rank = i+1; p.grad = GRADS[i%GRADS.length]; p.emoji = EMOJIS[i%EMOJIS.length]; });
+}
+
+// ── 필터 드롭다운 ───────────────────────────────────────────────────────────────
+function toggleDrop(key){
+  const el = document.getElementById('fd-'+key); if(!el) return;
+  const open = el.classList.contains('open');
+  closeDrops();
+  if(!open) el.classList.add('open');
+}
+function closeDrops(){ document.querySelectorAll('.fdrop.open').forEach(e=>e.classList.remove('open')); }
+function setFilter(key, val, label){
+  // 실거래가 API 한계: 매매·아파트만 제공 ('전체'는 허용, 전세/월세/오피스텔/빌라만 차단)
+  if (key==='deal' && (val==='jeonse'||val==='wolse')){ toast('실거래가 API는 매매만 제공해요'); closeDrops(); return; }
+  if (key==='type' && (val==='officetel'||val==='villa')){ toast('현재 아파트 실거래가만 지원해요'); closeDrops(); return; }
+  state.filters[key] = val;
+  // 칩 라벨 + 활성 표시
+  const drop = document.getElementById('fd-'+key);
+  const chip = drop.querySelector('.fchip'), lbl = drop.querySelector('.flbl');
+  if (lbl) lbl.textContent = label;
+  chip.classList.toggle('on', val !== 'all');      // '전체'일 때만 강조 해제
+  drop.querySelectorAll('.fopt').forEach(o=>o.classList.remove('on'));
+  [...drop.querySelectorAll('.fopt')].find(o=>o.getAttribute('onclick').includes(`'${val}'`))?.classList.add('on');
+  closeDrops();
+  renderCards();
+  if (leafletMap) renderMapMarkers();
+}
+function resetFilters(){
+  state.filters = { deal:'sale', price:'all', type:'apt', area:'all' };
+  const set = (key,label,onVal)=>{
+    const drop=document.getElementById('fd-'+key); if(!drop) return;
+    drop.querySelector('.flbl').textContent=label;
+    drop.querySelectorAll('.fopt').forEach(o=>o.classList.toggle('on', o.getAttribute('onclick').includes(`'${onVal}'`)));
+  };
+  set('deal','매매','sale'); set('price','가격 전체','all'); set('type','아파트','apt'); set('area','면적 전체','all');
+  document.querySelector('#fd-price .fchip')?.classList.remove('on');
+  document.querySelector('#fd-area .fchip')?.classList.remove('on');
+  closeDrops(); toast('필터를 초기화했어요');
+  renderCards(); if (leafletMap) renderMapMarkers();
+}
+// 메뉴 바깥 클릭 시 닫기
+document.addEventListener('click', e=>{ if(!e.target.closest('.fdrop')) closeDrops(); });
+
+// 검색 — 내장/실데이터 어느 쪽이든 props에서 즉시 필터 (서버 없이도 동작)
+function searchByName(name){
+  document.querySelectorAll('.nv').forEach(n => n.classList.toggle('on', n.dataset.view === 'map'));
+  state.view = 'map';
+  document.getElementById('analysisView')?.classList.remove('on');  // AI 분석 뷰에서 검색 시 지도로
+  leafletMap && leafletMap.invalidateSize();
+  state.query = name;
+  sel = null;
+  renderCards();
+  const list = visibleProps();
+  if (list.length){
+    const p = list[0]; sel = p.id;
+    if (leafletMap){ leafletMap.setView([p.lat, p.lng], 14); renderMapMarkers(); }
+    renderCards();
+    addAiMsg(`🔍 "<strong>${name}</strong>" 검색 결과 ${list.length}건<br><br>대표: <strong>${p.name}</strong> · ${won(p.price)} · 전용 ${p.area}㎡ (${p.gu||'강남구'} ${p.dong})`);
+  } else {
+    addAiMsg(`"${name}" 검색 결과가 없습니다. 단지명이나 동(예: 대치동)으로 다시 검색해 보세요.`);
+  }
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+updateFavBadge();
+renderCards();
+checkServer();
+
+// Leaflet은 DOM + 레이아웃이 완전히 잡힌 후 초기화
+window.addEventListener('load', () => {
+  initLeaflet();
+});
+</script>
+</body>
+</html>

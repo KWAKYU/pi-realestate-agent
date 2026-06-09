@@ -1,0 +1,15 @@
+# 환경변수 — API 키 (절대 커밋 금지)
+**/.env
+**/.env.*
+!**/.env.example
+
+# 의존성
+**/node_modules/
+
+# 빌드/임시
+**/dist/
+*.log
+.DS_Store
+
+# 미리보기 설정 (로컬 전용)
+.claude/launch.json
