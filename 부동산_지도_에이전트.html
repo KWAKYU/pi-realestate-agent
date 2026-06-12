@@ -290,6 +290,13 @@ body.resizing-v,body.resizing-v *{cursor:row-resize!important;user-select:none!i
 .tagcnt{background:var(--white);border:1px solid var(--border);border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;}
 .tagcnt b{color:var(--accent);font-size:13px;}
 .dplist{display:flex;flex-direction:column;gap:8px;}
+/* 채팅 → 지도 연동 버튼 */
+.cmaplink{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:6px 12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;}
+.cmaplink:hover{background:var(--accent-d);}
+/* 채팅 모드 토글 (에이전트 / 빠른) */
+.cmode{display:inline-flex;align-items:center;gap:6px;margin-bottom:7px;padding:4px 11px;background:var(--bg);border:1px solid var(--border);border-radius:999px;font-size:11px;font-weight:700;color:var(--text);cursor:pointer;user-select:none;}
+.cmode:hover{border-color:var(--accent);}
+.cmode.fast{background:var(--accent-l);color:var(--accent);border-color:var(--accent);}
 </style>
 </head>
 <body>
@@ -480,6 +487,10 @@ body.resizing-v,body.resizing-v *{cursor:row-resize!important;user-select:none!i
     </div>
 
     <div class="cinp">
+      <div class="cmode" id="cmode" onclick="toggleChatMode()" title="에이전트 ↔ 빠른 모드 전환">
+        <span id="cmodeLbl">🤖 에이전트 모드</span>
+        <span style="font-size:10px;opacity:.65">· 눌러서 ⚡빠른</span>
+      </div>
       <div class="cinprow">
         <input type="text" id="ci" placeholder="무엇이든 물어보세요..." onkeydown="if(event.key==='Enter')send()"/>
         <button class="csend" onclick="send()">
@@ -939,6 +950,7 @@ const replies = {
 
 let chatHistory = [];     // OpenRouter 대화 기록 (최근 N턴)
 let chatBusy = false;
+let chatMode = 'agent';   // 'agent'(Pi+MCP 실시간) | 'fast'(직접 OpenRouter 즉답)
 
 // 현재 지도에 로딩된 매물 → LLM 컨텍스트 요약
 function buildChatContext(){
@@ -951,36 +963,93 @@ function buildChatContext(){
     .map(p=>`- ${p.gu||''} ${p.dong} ${p.name}: ${won(p.price)}, 전용 ${p.area}㎡, ${p.year}년`).join('\n');
   return `지역: ${guSet.join(', ')||'강남구'} | 단지 ${list.length}개 | 평균 ${won(avg)} (최고 ${won(Math.max(...prices))}, 최저 ${won(Math.min(...prices))})\n매물(가격순):\n${top}`;
 }
-function addTyping(){
-  const c=document.getElementById('chat'), id='typing'+Date.now();
-  c.innerHTML+=`<div class="ma" id="${id}"><div class="marow"><div class="maic">Pi</div><div><div class="bl" style="color:var(--muted)">🤖 에이전트 분석 중… <span style="font-size:11px">(실거래가 조회·분석, 최대 1분)</span></div></div></div></div>`;
-  c.scrollTop=c.scrollHeight; return id;
+const typingTimers = {};
+// 간단 마크다운 → HTML (굵게·인라인코드·불릿·줄바꿈)
+function mdToHtml(s){
+  const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inl = t => t.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g,'<code style="background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;font-size:12px">$1</code>');
+  let html='', inUl=false;
+  esc(s).split(/\n/).forEach(ln=>{
+    const m = ln.match(/^\s*[-*•]\s+(.*)/);
+    if(m){ if(!inUl){html+='<ul style="margin:4px 0 4px 18px;padding:0">';inUl=true;} html+='<li>'+inl(m[1])+'</li>'; return; }
+    if(inUl){ html+='</ul>'; inUl=false; }
+    if(ln.trim()===''){ html+='<div style="height:6px"></div>'; return; }
+    html+='<div>'+inl(ln)+'</div>';
+  });
+  if(inUl) html+='</ul>';
+  return html;
 }
-function removeTyping(id){ document.getElementById(id)?.remove(); }
+function addTyping(mode){
+  const c=document.getElementById('chat'), id='typing'+Date.now();
+  const init = mode==='fast' ? '⚡ 답변 작성 중…' : '🤖 질문 분석 중… <span style="font-size:11px">(최대 1분)</span>';
+  c.innerHTML+=`<div class="ma" id="${id}"><div class="marow"><div class="maic">Pi</div><div><div class="bl" id="${id}_t" style="color:var(--muted)">${init}</div></div></div></div>`;
+  c.scrollTop=c.scrollHeight;
+  if(mode!=='fast'){   // 에이전트 모드만 단계별 표시 (시간이 걸리므로)
+    const stages=['🤖 질문 분석 중…','📊 실거래가 조회 중… (MCP)','🧮 결과 정리 중…'];
+    let i=0;
+    typingTimers[id]=setInterval(()=>{ i=Math.min(i+1,stages.length-1); const el=document.getElementById(id+'_t'); if(el) el.innerHTML=stages[i]+' <span style="font-size:11px">(최대 1분)</span>'; }, 7000);
+  }
+  return id;
+}
+function removeTyping(id){ clearInterval(typingTimers[id]); delete typingTimers[id]; document.getElementById(id)?.remove(); }
 
 async function send() {
   const el = document.getElementById('ci');
   const t = el.value.trim(); if(!t || chatBusy) return; el.value='';
   addUserMsg(t);
   chatBusy = true;
-  const tid = addTyping();
+  const tid = addTyping(chatMode);
   try {
-    // 현재 지도에서 보고 있는 구(區)를 힌트로 전달 → 에이전트가 "이 동네"를 해석
-    const guSet = [...new Set((props||[]).map(p=>p.gu).filter(Boolean))];
-    const hint = guSet.length ? `사용자는 현재 지도에서 ${guSet.slice(0,6).join(', ')} 지역 매물을 보고 있음` : '';
-    const r = await fetch(`${API_BASE}/api/agent`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ message:t, hint }),
-    });
-    const d = await r.json();
+    let reply;
+    if (chatMode === 'fast') {
+      // ⚡ 빠른 모드: 직접 OpenRouter 호출 (현재 로딩된 매물을 컨텍스트로) — 즉답
+      const r = await fetch(`${API_BASE}/api/chat`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ message:t, context: buildChatContext(), history: chatHistory }),
+      });
+      const d = await r.json(); reply = d.reply;
+      if (d.ok){ chatHistory.push({role:'user',content:t},{role:'assistant',content:reply}); if(chatHistory.length>12) chatHistory=chatHistory.slice(-12); }
+    } else {
+      // 🤖 에이전트 모드: Pi + MCP 실시간 조회. 현재 보는 구를 힌트로 전달
+      const guSet = [...new Set((props||[]).map(p=>p.gu).filter(Boolean))];
+      const hint = guSet.length ? `사용자는 현재 지도에서 ${guSet.slice(0,6).join(', ')} 지역 매물을 보고 있음` : '';
+      const r = await fetch(`${API_BASE}/api/agent`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ message:t, hint }),
+      });
+      const d = await r.json(); reply = d.reply;
+    }
     removeTyping(tid);
-    addAiMsg((d.reply || '응답을 받지 못했어요.').replace(/\n/g,'<br>'));
+    reply = reply || '응답을 받지 못했어요.';
+    addAiMsg(mdToHtml(reply) + chatMapLink(reply, t));   // 답변 + 지도 연동 버튼
   } catch(e){
     removeTyping(tid);
     const k = Object.keys(replies).find(k=>t.includes(k));   // 서버 꺼졌을 때 캔 응답 폴백
-    addAiMsg((k ? replies[k] : '⚠️ 에이전트 서버에 연결하지 못했어요. <code>node server.js</code>가 켜져 있는지 확인해 주세요.').replace(/\n/g,'<br>'));
+    addAiMsg((k ? replies[k] : '⚠️ 서버에 연결하지 못했어요. <code>node server.js</code>가 켜져 있는지 확인해 주세요.').replace(/\n/g,'<br>'));
   }
   chatBusy = false;
+}
+// 채팅 모드 전환 (에이전트 ↔ 빠른)
+function toggleChatMode(){
+  chatMode = chatMode==='agent' ? 'fast' : 'agent';
+  const el=document.getElementById('cmode'), lbl=document.getElementById('cmodeLbl');
+  if(chatMode==='fast'){ el.classList.add('fast'); lbl.textContent='⚡ 빠른 모드'; el.lastElementChild.textContent='· 눌러서 🤖에이전트'; toast('⚡ 빠른 모드 — 즉답(로딩 매물 기준 요약)'); }
+  else { el.classList.remove('fast'); lbl.textContent='🤖 에이전트 모드'; el.lastElementChild.textContent='· 눌러서 ⚡빠른'; toast('🤖 에이전트 모드 — MCP 실시간 조회(정확)'); }
+}
+// 답변 → 지도 연동: 답변에 나온 단지(로딩됨) 또는 구를 찾아 "지도에서 보기" 버튼 생성
+function chatMapLink(reply, userMsg){
+  const txt = (reply||'') + ' ' + (userMsg||'');
+  const p = (props||[]).find(x => x.name && (reply.includes(x.name) || reply.includes(x.name.replace(/\(.*\)/,'').trim())));
+  if (p) return `<button class="cmaplink" onclick="gotoProp(${p.id})">📍 ${p.name} 지도에서 보기</button>`;
+  const d = (typeof SEOUL_DISTRICTS!=='undefined') ? SEOUL_DISTRICTS.find(x=>txt.includes(x.gu)) : null;
+  if (d) return `<button class="cmaplink" onclick="chatGotoGu(${d.lat},${d.lng},'${d.gu}')">📍 ${d.gu} 지도로 이동</button>`;
+  return '';
+}
+function chatGotoGu(lat,lng,gu){
+  const mapTab=document.querySelector('.nv[data-view="map"]'); if(mapTab) setNav(mapTab);
+  if(leafletMap){ leafletMap.setView([lat,lng],13); leafletMap.invalidateSize(); }
+  toast('🗺️ '+gu+'로 이동');
 }
 function sendQ(el){document.getElementById('ci').value=el.textContent;send();}
 

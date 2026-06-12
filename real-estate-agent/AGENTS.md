@@ -7,6 +7,7 @@
 | 툴 이름                | 기능                                                       |
 |------------------------|------------------------------------------------------------|
 | `search_transactions`  | MCP 서버를 통해 지역·월 기준 실거래가 조회 (평균/최고/최저 + 단지 목록) |
+| `market_trend`         | MCP 서버를 통해 지역의 최근 N개월 평균 실거래가 추이 조회       |
 | `loan_calculator`      | LTV/DSR 기준 주택담보대출 예상 한도 계산 (참고용)            |
 
 > `search_transactions`는 MCP 서버(`mcp-server/realestate-mcp.mjs`)에 연결되어 data.go.kr 실데이터를 가져온다.

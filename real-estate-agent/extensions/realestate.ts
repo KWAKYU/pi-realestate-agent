@@ -59,7 +59,34 @@ export default (pi: any) => {
     },
   });
 
-  // ── 툴 2: 대출 한도 계산 (LTV / DSR) ─────────────────────────────────────────
+  // ── 툴 2: 시세 추이 조회 (MCP) ───────────────────────────────────────────────
+  pi.registerTool({
+    name: "market_trend",
+    label: "시세 추이 (MCP)",
+    description:
+      "특정 지역의 최근 N개월 평균 실거래가 추이를 MCP 서버를 통해 조회한다. " +
+      "region은 구 이름(예: 강남구) 또는 5자리 코드. months 미지정 시 3개월.",
+    promptSnippet: "market_trend: 지역 시세 추이를 MCP로 조회",
+    parameters: Type.Object({
+      region: Type.String({ description: "구 이름(강남구) 또는 5자리 코드(11680)" }),
+      months: Type.Optional(Type.Number({ description: "조회 개월 수 (기본 3)" })),
+    }),
+    execute: async (_id: string, args: { region: string; months?: number }) => {
+      try {
+        const client = await getMcpClient();
+        const res = await client.callTool({
+          name: "market_trend",
+          arguments: { region: args.region, months: args.months ?? 3 },
+        });
+        const text = (res.content || []).map((c: any) => c.text).filter(Boolean).join("\n") || "(빈 결과)";
+        return { content: [{ type: "text" as const, text }], details: {} };
+      } catch (e: any) {
+        return { content: [{ type: "text" as const, text: `MCP 조회 오류: ${e.message}` }], details: {} };
+      }
+    },
+  });
+
+  // ── 툴 3: 대출 한도 계산 (LTV / DSR) ─────────────────────────────────────────
   pi.registerTool({
     name: "loan_calculator",
     label: "대출 한도 계산",
