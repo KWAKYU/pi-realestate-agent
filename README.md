@@ -1,4 +1,4 @@
-<img width="476" height="268" alt="image" src="https://github.com/user-attachments/assets/094f719f-04f7-411b-ae77-f9e2db5b033c" /># 🏠 부동산 지도 AI 에이전트 (Pi Agent)
+🏠 부동산 지도 AI 에이전트 (Pi Agent)
 
 > 서울 아파트 **국토교통부 실거래가**를 지도에서 탐색하고, **Pi 에이전트**에게 자연어로 물어보면
 > MCP로 실데이터를 가져와 분석·요약해 주는 AI 부동산 서비스.
