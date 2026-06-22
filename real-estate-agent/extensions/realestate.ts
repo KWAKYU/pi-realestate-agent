@@ -43,13 +43,43 @@ export default (pi: any) => {
       region: Type.String({ description: "구 이름(강남구) 또는 5자리 코드(11680)" }),
       ym: Type.Optional(Type.String({ description: "거래년월 YYYYMM (미지정 시 지난달)" })),
       rows: Type.Optional(Type.Number({ description: "최대 건수 (기본 15)" })),
+      propertyType: Type.Optional(Type.String({ description: "유형: apt(아파트·기본)/officetel(오피스텔)/villa(연립다세대)" })),
     }),
-    execute: async (_id: string, args: { region: string; ym?: string; rows?: number }) => {
+    execute: async (_id: string, args: { region: string; ym?: string; rows?: number; propertyType?: string }) => {
       try {
         const client = await getMcpClient();
         const res = await client.callTool({
           name: "search_transactions",
-          arguments: { region: args.region, ym: args.ym, rows: args.rows ?? 15 },
+          arguments: { region: args.region, ym: args.ym, rows: args.rows ?? 15, propertyType: args.propertyType },
+        });
+        const text = (res.content || []).map((c: any) => c.text).filter(Boolean).join("\n") || "(빈 결과)";
+        return { content: [{ type: "text" as const, text }], details: {} };
+      } catch (e: any) {
+        return { content: [{ type: "text" as const, text: `MCP 조회 오류: ${e.message}` }], details: {} };
+      }
+    },
+  });
+
+  // ── 툴: 전월세 실거래가 조회 (MCP) ───────────────────────────────────────────
+  pi.registerTool({
+    name: "search_rent",
+    label: "전월세 실거래가 (MCP)",
+    description:
+      "국토교통부 부동산 전월세 실거래가를 MCP 서버로 조회한다(월세 0이면 전세). " +
+      "propertyType: apt(기본)/officetel(오피스텔)/villa(연립다세대). region/ym은 매매와 동일.",
+    promptSnippet: "search_rent: 지역 전월세 실거래가를 MCP로 조회",
+    parameters: Type.Object({
+      region: Type.String({ description: "구 이름(강남구) 또는 5자리 코드(11680)" }),
+      ym: Type.Optional(Type.String({ description: "계약년월 YYYYMM (미지정 시 지난달)" })),
+      rows: Type.Optional(Type.Number({ description: "최대 건수 (기본 15)" })),
+      propertyType: Type.Optional(Type.String({ description: "유형: apt(기본)/officetel/villa" })),
+    }),
+    execute: async (_id: string, args: { region: string; ym?: string; rows?: number; propertyType?: string }) => {
+      try {
+        const client = await getMcpClient();
+        const res = await client.callTool({
+          name: "search_rent",
+          arguments: { region: args.region, ym: args.ym, rows: args.rows ?? 15, propertyType: args.propertyType },
         });
         const text = (res.content || []).map((c: any) => c.text).filter(Boolean).join("\n") || "(빈 결과)";
         return { content: [{ type: "text" as const, text }], details: {} };

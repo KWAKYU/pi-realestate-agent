@@ -122,7 +122,15 @@ function fetchDataGo(apiUrl) {
 }
 
 // ── 헬퍼: XML → JSON 변환 (간이) ─────────────────────────────────────────────
-function parseAptTradeXml(xml) {
+// 부동산 유형 × 거래종류 → data.go.kr 엔드포인트
+const RTMS_ENDPOINTS = {
+  apt:       { trade: 'RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade',   rent: 'RTMSDataSvcAptRent/getRTMSDataSvcAptRent' },
+  officetel: { trade: 'RTMSDataSvcOffiTrade/getRTMSDataSvcOffiTrade', rent: 'RTMSDataSvcOffiRent/getRTMSDataSvcOffiRent' },
+  villa:     { trade: 'RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade',     rent: 'RTMSDataSvcRHRent/getRTMSDataSvcRHRent' },
+};
+
+// XML 파싱 — deal='trade'(매매, amount=거래금액) / 'rent'(전월세, amount=보증금 + monthlyRent)
+function parseAptTradeXml(xml, deal = 'trade') {
   try {
     const items = [];
     const itemMatches = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
@@ -132,13 +140,12 @@ function parseAptTradeXml(xml) {
         const m = item.match(new RegExp(`<${tag}>([^<]*)<\/${tag}>`));
         return m ? m[1].trim() : '';
       };
-      // 실제 apis.data.go.kr 응답은 영문 필드명을 사용한다.
-      // (aptNm/dealAmount/umdNm/excluUseAr/buildYear/dealYear...) — 한글 태그는 구버전 폴백.
-      const name  = get('aptNm')     || get('단지명') || get('아파트');
+      // 유형별 명칭 필드 폴백 (아파트 aptNm / 오피스텔 offiNm / 연립다세대 mhouseNm)
+      const name  = get('aptNm') || get('offiNm') || get('mhouseNm') || get('단지명') || get('아파트');
       const year  = get('dealYear')  || get('계약년도') || get('년');
       const month = get('dealMonth') || get('계약월') || get('월');
       const day   = get('dealDay')   || get('계약일') || get('일');
-      items.push({
+      const it = {
         apartmentName:  name,
         dong:           get('umdNm') || get('법정동'),
         area:           parseFloat(get('excluUseAr') || get('전용면적')) || 0,
@@ -147,19 +154,23 @@ function parseAptTradeXml(xml) {
         dealYear:       year,
         dealMonth:      month,
         dealDay:        day,
-        amount:         (get('dealAmount') || get('거래금액')).replace(/,/g, '').replace(/\s/g, '').trim(),
         jibun:          get('jibun') || get('지번'),
-        dealType:       get('dealingGbn') || get('거래유형') || '중개거래',
-      });
+      };
+      if (deal === 'rent') {
+        it.amount = (get('deposit') || get('보증금액')).replace(/[,\s]/g, '');           // 보증금/전세금
+        it.monthlyRent = parseInt((get('monthlyRent') || get('월세금액')).replace(/[,\s]/g, '')) || 0;
+        it.dealType = it.monthlyRent > 0 ? '월세' : '전세';
+      } else {
+        it.amount = (get('dealAmount') || get('거래금액')).replace(/,/g, '').replace(/\s/g, '').trim();
+        it.monthlyRent = 0;
+        it.dealType = get('dealingGbn') || get('거래유형') || '중개거래';
+      }
+      items.push(it);
     });
 
-    // 결과 코드 확인
     const codeMatch = xml.match(/<resultCode>(\d+)<\/resultCode>/);
     const msgMatch  = xml.match(/<resultMsg>([^<]+)<\/resultMsg>/);
-    const resultCode = codeMatch ? codeMatch[1] : '00';
-    const resultMsg  = msgMatch  ? msgMatch[1]  : 'OK';
-
-    return { resultCode, resultMsg, items };
+    return { resultCode: codeMatch ? codeMatch[1] : '00', resultMsg: msgMatch ? msgMatch[1] : 'OK', items };
   } catch (e) {
     return { resultCode: '99', resultMsg: e.message, items: [] };
   }
@@ -177,6 +188,8 @@ function parseAptTradeXml(xml) {
  */
 app.get('/api/apt-trade', async (req, res) => {
   const { region = '강남구', ym, rows = 30, name } = req.query;
+  const deal  = req.query.deal === 'rent' ? 'rent' : 'trade';            // 매매/전월세
+  const ptype = ['apt', 'officetel', 'villa'].includes(req.query.ptype) ? req.query.ptype : 'apt';
 
   // 지역코드 결정
   const lawdCd = REGION_CODES[region] || region;
@@ -191,9 +204,10 @@ app.get('/api/apt-trade', async (req, res) => {
     return res.json(mockAptTrade(region, dealYmd, name));
   }
 
-  // 2024년 이후 신규 API 엔드포인트 (publicDataPk=15126468)
+  // 유형 × 거래종류에 맞는 data.go.kr 엔드포인트 선택
+  const endpoint = (RTMS_ENDPOINTS[ptype] || RTMS_ENDPOINTS.apt)[deal];
   const apiUrl =
-    `https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade` +
+    `https://apis.data.go.kr/1613000/${endpoint}` +
     `?serviceKey=${encodeURIComponent(SERVICE_KEY)}` +
     `&LAWD_CD=${lawdCd}` +
     `&DEAL_YMD=${dealYmd}` +
@@ -202,12 +216,12 @@ app.get('/api/apt-trade', async (req, res) => {
 
   try {
     const { status, body: raw } = await fetchDataGo(apiUrl);
-    console.log(`[apt-trade] HTTP ${status} · ${region}(${lawdCd}) ${dealYmd}`);
+    console.log(`[apt-trade] HTTP ${status} · ${ptype}/${deal} · ${region}(${lawdCd}) ${dealYmd}`);
     if (status === 401)
       return res.json({ ok:false, authError:401, message:'인증키가 인식되지 않습니다 (401). 키 값을 확인하세요.' });
     if (status === 403 || /SERVICE_KEY_IS_NOT_REGISTERED/i.test(raw) || /Forbidden/i.test(raw))
-      return res.json({ ok:false, authError:403, message:'키는 유효하지만 이 API 사용 권한이 없습니다 (403). data.go.kr에서 "아파트 매매 실거래가" 활용신청 승인이 필요합니다.' });
-    const parsed = parseAptTradeXml(raw);
+      return res.json({ ok:false, authError:403, message:`키는 유효하지만 '${ptype} ${deal==='rent'?'전월세':'매매'}' 데이터셋 활용신청이 아직 적용되지 않았습니다 (403).` });
+    const parsed = parseAptTradeXml(raw, deal);
 
     // 단지명 필터
     const items = name

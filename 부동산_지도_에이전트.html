@@ -632,7 +632,13 @@ function inArea(a, k){ return k==='u60'?a<60 : k==='60_85'?a>=60&&a<85 : k==='85
 
 // ── RENDER CARDS ──────────────────────────────────────────────────────────────
 function renderCards() {
-  const list = visibleProps();
+  let list = visibleProps();
+  // 실데이터 + 지도뷰(검색·관심 아님) → 현재 지도 화면 안의 매물만 (지역 이동 시 그 지역 것)
+  if (realMode && leafletMap && !state.query && state.view !== 'fav') {
+    const b = leafletMap.getBounds();
+    const inb = list.filter(p => b.contains([p.lat, p.lng]));
+    if (inb.length) list = inb;
+  }
   const box = document.getElementById('cards');
   document.getElementById('ccnt').textContent = list.length;
   if (list.length === 0){
@@ -1094,7 +1100,7 @@ function initLeaflet() {
   // 지도 이동/줌 종료 → 화면에 들어온 구를 동적 로딩 (디바운스)
   leafletMap.on('moveend zoomend', () => {
     clearTimeout(_moveTimer);
-    _moveTimer = setTimeout(() => { loadVisibleRegions(); refreshDynamicLayers(); }, 350);
+    _moveTimer = setTimeout(() => { loadVisibleRegions(); refreshDynamicLayers(); renderCards(); }, 350);
   });
   mapReady = true;
   if (wantRealMode) enableRealMode();      // 서버 확인이 먼저 끝난 경우
@@ -1262,6 +1268,9 @@ const SEOUL_DISTRICTS = [
 ];
 
 let realMode = false, wantRealMode = false, mapReady = false;
+let realDeal = 'trade';                    // 'trade'(매매) | 'rent'(전월세)
+let realType = 'apt';                      // 'apt' | 'officetel' | 'villa'
+let rentKind = 'all';                      // 전월세 중: 'all' | 'jeonse'(전세) | 'wolse'(월세)
 let realProps = [];                       // 누적된 실데이터 매물
 const loadedRegions = new Set();          // 이미 로딩한 구 코드
 let pidSeq = 0;                           // 전역 고유 매물 ID
@@ -1293,7 +1302,7 @@ async function loadRegion(d){
     const dt = new Date(); dt.setMonth(dt.getMonth() - back);
     const ym = `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}`;
     try {
-      const r = await fetch(`${API_BASE}/api/apt-trade?region=${d.code}&ym=${ym}&rows=60`);
+      const r = await fetch(`${API_BASE}/api/apt-trade?region=${d.code}&ym=${ym}&rows=60&deal=${realDeal}&ptype=${realType}`);
       const data = await r.json();
       if (data.authError){
         setBadge(data.authError===403 ? '⚠️ API 미승인 (403)' : '⚠️ 인증키 오류 (401)', 'var(--red)', 'rgba(225,112,85,.15)');
@@ -1311,23 +1320,32 @@ async function loadRegion(d){
 
 // API items(한 구) → realProps 누적 후 카드/지도 갱신
 function appendRegionProps(items, d){
+  // 전월세에서 전세/월세를 고른 경우, 건물별로 묶기 전에 원자료를 먼저 거른다
+  let raw = items;
+  if (realDeal === 'rent'){
+    if (rentKind === 'jeonse') raw = items.filter(i => (parseInt(i.monthlyRent)||0) === 0);
+    else if (rentKind === 'wolse') raw = items.filter(i => (parseInt(i.monthlyRent)||0) > 0);
+  }
   const grouped = {};
-  items.forEach(i => { if(i.apartmentName) (grouped[i.apartmentName] = grouped[i.apartmentName] || []).push(i); });
+  raw.forEach(i => { if(i.apartmentName) (grouped[i.apartmentName] = grouped[i.apartmentName] || []).push(i); });
   Object.keys(grouped).slice(0, 14).forEach(name => {
     const arr = grouped[name], it = arr[0];
     const avg = Math.round(arr.reduce((a,b)=>a + (parseInt(b.amount)||0), 0) / arr.length);
     if (!avg) return;
-    const hasDong = !!DONG_COORDS[it.dong];
-    const c = DONG_COORDS[it.dong] || [d.lat, d.lng];
-    const j = hasDong ? 0.004 : 0.014;       // 동 좌표 있으면 미세, 없으면 구 전역 분산
+    const ll = dongLatLng(d.gu, it.dong);    // 실제 동 좌표(캐시/강남) 있으면 사용
+    const c = ll || [d.lat, d.lng];          // 없으면 임시로 구 중심 (배경 지오코딩 후 실제 동으로 이동)
+    const j = ll ? 0.004 : 0.012;
+    if (!ll) queueDong(d.gu, it.dong);       // 동 좌표 없으면 OSM 지오코딩 큐에 추가
     const yr = it.year || 0;
+    const monthly = parseInt(it.monthlyRent) || 0;
     const tags = ['실거래'];
+    if (realDeal === 'rent') tags.push(monthly > 0 ? '월세' : '전세');
     if (yr >= 2015) tags.push('신축');
     if (['대치동','도곡동','개포동','일원동','역삼동','목동','중계동','반포동','잠원동','여의도동','이촌동'].includes(it.dong)) tags.push('학군');
     tags.push('역세권');
-    if (yr >= 2010 || avg >= 200000) tags.push('투자');
+    if (realDeal === 'trade' && (yr >= 2010 || avg >= 200000)) tags.push('투자');
     realProps.push({
-      id: pidSeq++, name, gu: d.gu, dong: it.dong || d.gu, price: avg,
+      id: pidSeq++, name, gu: d.gu, dong: it.dong || d.gu, price: avg, monthly,
       area: it.area || 84, year: yr || 2010, floor: `${it.floor||10}층`, tags,
       lat: c[0] + (Math.random()-0.5)*j, lng: c[1] + (Math.random()-0.5)*j,
     });
@@ -1335,7 +1353,22 @@ function appendRegionProps(items, d){
   reRankReal();
   props = realProps;
   scheduleRender();                          // 여러 구 동시 로딩 시 렌더 묶기
-  setBadge(`✅ 실거래가 · ${realProps.length}개 단지 · ${loadedRegions.size}개 구`, 'var(--green)', 'rgba(0,184,148,.15)');
+  setBadge(`✅ ${modeLabel()} · ${realProps.length}개 단지 · ${loadedRegions.size}개 구`, 'var(--green)', 'rgba(0,184,148,.15)');
+}
+// 현재 데이터 모드 라벨 (배지/안내용)
+function modeLabel(){
+  const t = { apt:'아파트', officetel:'오피스텔', villa:'빌라' }[realType] || '아파트';
+  const dl = realDeal === 'rent' ? (rentKind==='jeonse'?'전세':rentKind==='wolse'?'월세':'전월세') : '매매';
+  return `${t} ${dl}`;
+}
+// 거래종류/유형 변경 시: 데이터셋이 바뀌므로 누적분을 비우고 현재 화면 다시 로딩
+function reloadRealMode(){
+  if (!realMode) return;
+  realProps = []; props = []; loadedRegions.clear(); sel = null;
+  renderCards(); if (leafletMap) renderMapMarkers();
+  setBadge(`⏳ ${modeLabel()} 불러오는 중…`, 'var(--muted)', 'rgba(100,116,139,.1)');
+  loadVisibleRegions();
+  setTimeout(loadVisibleRegions, 500);
 }
 
 // 카드/마커 렌더를 디바운스로 합쳐 버스트 로딩 시 버벅임 방지
@@ -1351,6 +1384,54 @@ function reRankReal(){
   realProps.forEach((p,i)=>{ p.rank = i+1; p.grad = GRADS[i%GRADS.length]; p.emoji = EMOJIS[i%EMOJIS.length]; });
 }
 
+// ── 동(洞) 지오코딩 (OSM) — 매물을 "구 중심"이 아닌 실제 동 위치에 배치 ─────────────
+let DONG_GEO = {};
+try { DONG_GEO = JSON.parse(localStorage.getItem('pi_donggeo') || '{}'); } catch {}
+const _geoQueue = [], _geoSeen = new Set();
+let _geoBusy = false;
+function dongKey(gu, dong){ return `${gu||''} ${dong||''}`.trim(); }
+function dongLatLng(gu, dong){
+  const k = dongKey(gu, dong);
+  if (DONG_GEO[k]) return DONG_GEO[k];
+  if (gu === '강남구' && DONG_COORDS[dong]) return DONG_COORDS[dong];   // 강남은 내장 좌표
+  return null;
+}
+function queueDong(gu, dong){
+  const k = dongKey(gu, dong);
+  if (!dong || _geoSeen.has(k) || dongLatLng(gu, dong)) return;
+  _geoSeen.add(k); _geoQueue.push({ gu, dong, k });
+  if (!_geoBusy) processGeoQueue();
+}
+async function processGeoQueue(){
+  _geoBusy = true;
+  while (_geoQueue.length){
+    const { gu, dong, k } = _geoQueue.shift();
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ko&countrycodes=kr&q=${encodeURIComponent('서울특별시 ' + gu + ' ' + dong)}`;
+      const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+      const arr = await r.json();
+      if (arr && arr[0] && arr[0].lat){
+        DONG_GEO[k] = [parseFloat(arr[0].lat), parseFloat(arr[0].lon)];
+        try { localStorage.setItem('pi_donggeo', JSON.stringify(DONG_GEO)); } catch {}
+        relocateDong(gu, dong, DONG_GEO[k]);   // 해당 동 매물들을 실제 위치로 이동
+      }
+    } catch(e){ /* 실패 시 다음 동 */ }
+    await new Promise(res => setTimeout(res, 1100));   // Nominatim 예의상 ~1req/s
+  }
+  _geoBusy = false;
+}
+function relocateDong(gu, dong, ll){
+  let changed = false;
+  for (const p of realProps){
+    if (p.gu === gu && p.dong === dong){
+      p.lat = ll[0] + (Math.random()-0.5)*0.004;
+      p.lng = ll[1] + (Math.random()-0.5)*0.004;
+      changed = true;
+    }
+  }
+  if (changed) scheduleRender();
+}
+
 // ── 필터 드롭다운 ───────────────────────────────────────────────────────────────
 function toggleDrop(key){
   const el = document.getElementById('fd-'+key); if(!el) return;
@@ -1360,9 +1441,6 @@ function toggleDrop(key){
 }
 function closeDrops(){ document.querySelectorAll('.fdrop.open').forEach(e=>e.classList.remove('open')); }
 function setFilter(key, val, label){
-  // 실거래가 API 한계: 매매·아파트만 제공 ('전체'는 허용, 전세/월세/오피스텔/빌라만 차단)
-  if (key==='deal' && (val==='jeonse'||val==='wolse')){ toast('실거래가 API는 매매만 제공해요'); closeDrops(); return; }
-  if (key==='type' && (val==='officetel'||val==='villa')){ toast('현재 아파트 실거래가만 지원해요'); closeDrops(); return; }
   state.filters[key] = val;
   // 칩 라벨 + 활성 표시
   const drop = document.getElementById('fd-'+key);
@@ -1372,8 +1450,19 @@ function setFilter(key, val, label){
   drop.querySelectorAll('.fopt').forEach(o=>o.classList.remove('on'));
   [...drop.querySelectorAll('.fopt')].find(o=>o.getAttribute('onclick').includes(`'${val}'`))?.classList.add('on');
   closeDrops();
-  renderCards();
-  if (leafletMap) renderMapMarkers();
+  // 거래유형·유형 → 데이터셋이 바뀌므로 재로딩 / 가격·면적 → 즉시 필터
+  if (key === 'deal' || key === 'type') applyDataMode();
+  else { renderCards(); if (leafletMap) renderMapMarkers(); }
+}
+// 거래유형/유형 선택 → realDeal/realType/rentKind 갱신 후 재로딩
+function applyDataMode(){
+  const f = state.filters;
+  realType = (f.type === 'officetel' || f.type === 'villa') ? f.type : 'apt';
+  if (f.deal === 'jeonse')     { realDeal = 'rent';  rentKind = 'jeonse'; }
+  else if (f.deal === 'wolse') { realDeal = 'rent';  rentKind = 'wolse'; }
+  else                         { realDeal = 'trade'; rentKind = 'all'; }   // 매매/전체
+  if (realMode) reloadRealMode();
+  else { renderCards(); if (leafletMap) renderMapMarkers(); }
 }
 function resetFilters(){
   state.filters = { deal:'sale', price:'all', type:'apt', area:'all' };
@@ -1386,17 +1475,18 @@ function resetFilters(){
   document.querySelector('#fd-price .fchip')?.classList.remove('on');
   document.querySelector('#fd-area .fchip')?.classList.remove('on');
   closeDrops(); toast('필터를 초기화했어요');
-  renderCards(); if (leafletMap) renderMapMarkers();
+  applyDataMode();   // 매매·아파트로 되돌리고 (실데이터면) 재로딩
 }
 // 메뉴 바깥 클릭 시 닫기
 document.addEventListener('click', e=>{ if(!e.target.closest('.fdrop')) closeDrops(); });
 
 // 검색 — 내장/실데이터 어느 쪽이든 props에서 즉시 필터 (서버 없이도 동작)
-function searchByName(name){
+async function searchByName(name){
   document.querySelectorAll('.nv').forEach(n => n.classList.toggle('on', n.dataset.view === 'map'));
   state.view = 'map';
   document.getElementById('analysisView')?.classList.remove('on');  // AI 분석 뷰에서 검색 시 지도로
   leafletMap && leafletMap.invalidateSize();
+  // 1) 먼저 로딩된 매물에서 찾기 (단지명/동/구)
   state.query = name;
   sel = null;
   renderCards();
@@ -1406,9 +1496,28 @@ function searchByName(name){
     if (leafletMap){ leafletMap.setView([p.lat, p.lng], 14); renderMapMarkers(); }
     renderCards();
     addAiMsg(`🔍 "<strong>${name}</strong>" 검색 결과 ${list.length}건<br><br>대표: <strong>${p.name}</strong> · ${won(p.price)} · 전용 ${p.area}㎡ (${p.gu||'강남구'} ${p.dong})`);
-  } else {
-    addAiMsg(`"${name}" 검색 결과가 없습니다. 단지명이나 동(예: 대치동)으로 다시 검색해 보세요.`);
+    return;
   }
+  // 2) 매물에 없으면 → 지역/동/학교/역 이름을 지도에서 찾아 이동 (그 지역이 자동 로딩됨)
+  state.query = '';                       // 필터 해제 (위치 이동이므로 빈 결과 방지)
+  renderCards();
+  const loc = await geocodePlace(name);
+  if (loc && leafletMap){
+    leafletMap.setView([loc.lat, loc.lng], 14);   // moveend → loadVisibleRegions가 그 지역 실거래가 로딩
+    addAiMsg(`🗺️ "<strong>${name}</strong>" 위치로 이동했어요.<br>그 지역 실거래가를 불러오는 중… 잠시 후 지도·추천 매물에 표시됩니다.`);
+  } else {
+    addAiMsg(`"${name}" 을(를) 찾지 못했어요. 단지명·동(예: 신촌동)·역(예: 홍대입구역)·학교명으로 다시 검색해 보세요.`);
+  }
+}
+// OSM Nominatim 지오코딩 (서울 우선) — 지역/동/학교/지하철역 → 좌표
+async function geocodePlace(q){
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ko&countrycodes=kr&q=${encodeURIComponent('서울 ' + q)}`;
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    const d = await r.json();
+    if (d && d[0] && d[0].lat) return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+  } catch(e){ console.warn('지오코딩 실패:', e.message); }
+  return null;
 }
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
